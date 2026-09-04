@@ -22,3 +22,37 @@ class RoleUpdate(StrictModel):
             raise ValueError("role must be user, admin or banned")
         return value
 
+
+class Sample(StrictModel):
+    input: str
+    output: str
+
+
+class ProblemBody(StrictModel):
+    id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_.-]+$")
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1)
+    input_description: str = Field(min_length=1)
+    output_description: str = Field(min_length=1)
+    samples: list[Sample] = Field(min_length=1)
+    constraints: str = Field(min_length=1)
+    testcases: list[Sample] = Field(min_length=1)
+    hint: str = ""
+    source: str = ""
+    tags: list[str] = Field(default_factory=list)
+    time_limit: float = Field(default=3.0, gt=0, le=60)
+    memory_limit: int = Field(default=128, ge=16, le=2048)
+    author: str = ""
+    difficulty: str = ""
+
+    @field_validator("tags")
+    @classmethod
+    def clean_tags(cls, tags: list[str]) -> list[str]:
+        cleaned = [tag.strip() for tag in tags if tag.strip()]
+        if len(cleaned) != len(set(cleaned)):
+            raise ValueError("tags must be unique")
+        return cleaned
+
+
+class VisibilityBody(StrictModel):
+    public_cases: bool = False
