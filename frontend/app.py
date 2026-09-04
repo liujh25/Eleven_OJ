@@ -5,7 +5,13 @@ import time
 
 import streamlit as st
 
-from frontend.client import APIError, OJClient
+try:
+    from frontend.client import APIError, OJClient
+except ModuleNotFoundError as exc:
+    if exc.name != "frontend":
+        raise
+    # Streamlit may prepend the script directory instead of the project root.
+    from client import APIError, OJClient
 
 st.set_page_config(page_title="Async OJ", page_icon="⚡", layout="wide")
 st.markdown(

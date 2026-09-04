@@ -9,6 +9,11 @@ set "VENV_DIR=%PROJECT_ROOT%\.venv"
 set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
 set "OJ_API_URL=http://127.0.0.1:8000"
 set "FRONTEND_URL=http://127.0.0.1:8501"
+if defined PYTHONPATH (
+    set "PYTHONPATH=%PROJECT_ROOT%;%PYTHONPATH%"
+) else (
+    set "PYTHONPATH=%PROJECT_ROOT%"
+)
 
 echo ========================================
 echo           Async OJ one-click start
@@ -47,7 +52,7 @@ if /I "%~1"=="--check" (
 call :url_ready "%OJ_API_URL%/health" 2
 if errorlevel 1 (
     echo [3/4] Starting FastAPI backend at %OJ_API_URL% ...
-    start "Async OJ API" /D "%PROJECT_ROOT%" powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -Command "^& '%VENV_PY%' -m uvicorn oj.app:app --host 127.0.0.1 --port 8000"
+    start "Async OJ API" /D "%PROJECT_ROOT%" "%VENV_PY%" -m uvicorn oj.app:app --host 127.0.0.1 --port 8000
     call :wait_for_url "%OJ_API_URL%/health" 30
     if errorlevel 1 goto :api_failed
 ) else (
@@ -57,7 +62,7 @@ if errorlevel 1 (
 call :url_ready "%FRONTEND_URL%" 2
 if errorlevel 1 (
     echo [4/4] Starting Streamlit frontend at %FRONTEND_URL% ...
-    start "Async OJ Web" /D "%PROJECT_ROOT%" powershell.exe -NoExit -NoProfile -ExecutionPolicy Bypass -Command "^& '%VENV_PY%' -m streamlit run frontend/app.py --server.address 127.0.0.1 --server.port 8501"
+    start "Async OJ Web" /D "%PROJECT_ROOT%" "%VENV_PY%" -m streamlit run frontend\app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true --browser.gatherUsageStats false
     call :wait_for_url "%FRONTEND_URL%" 45
     if errorlevel 1 goto :frontend_failed
 ) else (
