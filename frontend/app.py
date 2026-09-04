@@ -209,83 +209,185 @@ def problem_payload(prefix: str, existing: dict | None = None) -> dict | None:
     }
 
 
-def problems_page() -> None:
-    if not require_login():
+def render_problem_statement(problem: dict) -> None:
+    st.subheader(f"{problem['id']} · {problem['title']}")
+    metadata = [
+        f"难度：{problem.get('difficulty') or '未设置'}",
+        f"时限：{problem['time_limit']} 秒",
+        f"内存：{problem['memory_limit']} MB",
+    ]
+    if problem.get("tags"):
+        metadata.append(f"标签：{' · '.join(problem['tags'])}")
+    st.caption("　|　".join(metadata))
+    st.markdown(problem["description"] or "暂无题目描述。")
+    st.markdown("#### 输入格式")
+    st.markdown(problem["input_description"])
+    st.markdown("#### 输出格式")
+    st.markdown(problem["output_description"])
+    st.markdown("#### 样例")
+    for number, sample in enumerate(problem.get("samples", []), start=1):
+        with st.container(border=True):
+            st.caption(f"样例 {number}")
+            input_column, output_column = st.columns(2)
+            input_column.markdown("**输入**")
+            input_column.code(sample.get("input", ""), language=None)
+            output_column.markdown("**输出**")
+            output_column.code(sample.get("output", ""), language=None)
+    st.markdown("#### 数据范围")
+    st.markdown(problem["constraints"])
+    if problem.get("hint"):
+        st.info(f"提示：{problem['hint']}")
+    if problem.get("source") or problem.get("author"):
+        st.caption(
+            f"来源：{problem.get('source') or '未设置'} · 作者：{problem.get('author') or '未设置'}"
+        )
+
+
+def render_submission_result(submission_id: str, auto_refresh: bool = False) -> None:
+    result = client().get(f"/api/submissions/{submission_id}")
+    state = {"pending": "running", "success": "complete", "error": "error"}.get(
+        result["status"], "complete"
+    )
+    st.status(f"状态：{result['status']}", state=state)
+    if result["status"] == "pending":
+        if auto_refresh:
+            time.sleep(1)
+            st.rerun()
         return
-    st.header("题目中心")
+    score_column, total_column = st.columns(2)
+    score_column.metric("得分", result.get("score", 0))
+    total_column.metric("总分", result.get("counts", 0))
+    st.write("编译信息", result.get("compile_info"))
+    st.write("运行信息", result.get("run_info"))
+    if result.get("error_info"):
+        st.error(result["error_info"])
     try:
-        items = client().get("/api/problems/")
-    except Exception as exc:
-        show_error(exc)
-        return
-    list_tab, create_tab, edit_tab = st.tabs(["题目列表", "新增题目", "编辑题目"])
-    with list_tab:
-        if not items:
+        log = client().get(f"/api/submissions/{submission_id}/log")
+        st.dataframe(log["details"], width="stretch", hide_index=True)
+    except APIError as exc:
+        st.info(f"测试点日志不可见：{exc}")
+
+
+def problem_management(items: list[dict]) -> None:
+    overview_tab, create_tab, edit_tab = st.tabs(["题库概览", "新增题目", "编辑题目"])
+    with overview_tab:
+        if items:
+            st.dataframe(items, width="stretch", hide_index=True)
+        else:
             st.info("题库为空，请新增第一道题。")
-        for item in items:
-            with st.expander(f"{item['id']} · {item['title']}"):
-                try:
-                    problem = client().get(f"/api/problems/{item['id']}")
-                    st.markdown(problem["description"])
-                    st.code(problem["input_description"], language=None)
-                    st.write("样例", problem["samples"])
-                    limits = f"时限 {problem['time_limit']}s · 内存 {problem['memory_limit']}MB"
-                    st.caption(f"{limits} · {', '.join(problem['tags'])}")
-                    if st.session_state.user["role"] == "admin" and st.button(
-                        "删除", key=f"delete-{item['id']}"
-                    ):
-                        client().delete(f"/api/problems/{item['id']}")
-                        st.rerun()
-                except Exception as exc:
-                    show_error(exc)
     with create_tab:
         try:
             payload = problem_payload("create", st.session_state.pop("ai_problem", None))
             if payload:
                 client().post("/api/problems/", json=payload)
                 st.success("题目已新增")
+                st.rerun()
         except Exception as exc:
             show_error(exc)
     with edit_tab:
-        if items:
-            selected = st.selectbox("选择题目", [item["id"] for item in items])
-            try:
-                existing = client().get(f"/api/problems/{selected}")
-                payload = problem_payload("edit", existing)
-                if payload:
-                    client().put(f"/api/problems/{selected}", json=payload)
-                    st.success("题目已更新")
-            except Exception as exc:
-                show_error(exc)
+        if not items:
+            st.info("暂无可编辑题目。")
+            return
+        selected = st.selectbox("选择题目", [item["id"] for item in items])
+        try:
+            existing = client().get(f"/api/problems/{selected}")
+            payload = problem_payload("edit", existing)
+            if payload:
+                client().put(f"/api/problems/{selected}", json=payload)
+                st.success("题目已更新")
+                st.rerun()
+            if st.button("删除题目", key=f"delete-{selected}", type="secondary"):
+                client().delete(f"/api/problems/{selected}")
+                st.success("题目已删除")
+                st.rerun()
+        except Exception as exc:
+            show_error(exc)
 
 
-def submissions_page() -> None:
+def workspace_page() -> None:
     user = require_login()
     if not user:
         return
-    st.header("评测中心")
-    submit_tab, records_tab, detail_tab = st.tabs(["提交代码", "提交记录", "结果详情"])
-    with submit_tab:
+    st.header("题目与评测")
+    try:
+        all_problems = client().get("/api/problems/")
+        languages = client().get("/api/languages/")["name"]
+    except Exception as exc:
+        show_error(exc)
+        return
+    tab_names = ["在线做题", "提交记录", "结果详情"]
+    if user["role"] == "admin":
+        tab_names.append("题目管理")
+    tabs = st.tabs(tab_names)
+    with tabs[0]:
         try:
-            problems = client().get("/api/problems/")
-            languages = client().get("/api/languages/")["name"]
-            if not problems:
+            if not all_problems:
                 st.info("暂无题目。")
             else:
-                with st.form("submit-code"):
-                    problem_id = st.selectbox("题目", [item["id"] for item in problems])
-                    language = st.selectbox("语言", languages)
-                    code = st.text_area("代码", height=320)
-                    if st.form_submit_button("提交评测", type="primary"):
-                        data = client().post(
-                            "/api/submissions/",
-                            json={"problem_id": problem_id, "language": language, "code": code},
-                        )
-                        st.session_state.last_submission = data["submission_id"]
-                        st.success(f"提交成功：{data['submission_id']}")
+                all_tags = sorted(
+                    {tag for problem in all_problems for tag in problem.get("tags", [])}
+                )
+                filter_column, selector_column = st.columns([1, 2])
+                selected_tag = filter_column.selectbox(
+                    "按标签查找", ["全部标签", *all_tags], key="problem_tag"
+                )
+                visible_problems = all_problems
+                if selected_tag != "全部标签":
+                    visible_problems = client().get("/api/problems/", params={"tag": selected_tag})
+                if not visible_problems:
+                    st.warning("没有找到包含该标签的题目。")
+                else:
+                    problem_ids = [item["id"] for item in visible_problems]
+                    if st.session_state.get("workspace_problem") not in problem_ids:
+                        st.session_state.workspace_problem = problem_ids[0]
+                    selected = selector_column.selectbox(
+                        "选择题目",
+                        problem_ids,
+                        key="workspace_problem",
+                        format_func=lambda problem_id: next(
+                            f"{item['id']} · {item['title']}"
+                            for item in visible_problems
+                            if item["id"] == problem_id
+                        ),
+                    )
+                    problem = client().get(f"/api/problems/{selected}")
+                    statement_column, judge_column = st.columns([1.15, 1], gap="large")
+                    with statement_column:
+                        render_problem_statement(problem)
+                    with judge_column:
+                        st.subheader("提交代码")
+                        submitted_now = False
+                        with st.form(f"submit-code-{selected}"):
+                            language = st.selectbox("语言", languages, key=f"language-{selected}")
+                            code = st.text_area(
+                                "代码",
+                                height=440,
+                                key=f"code-{selected}",
+                                placeholder="在这里编写并提交你的程序……",
+                            )
+                            if st.form_submit_button("提交评测", type="primary"):
+                                data = client().post(
+                                    "/api/submissions/",
+                                    json={
+                                        "problem_id": selected,
+                                        "language": language,
+                                        "code": code,
+                                    },
+                                )
+                                st.session_state.last_submission = data["submission_id"]
+                                st.session_state.last_problem = selected
+                                submitted_now = True
+                                st.success(f"提交成功：{data['submission_id']}")
+                        latest = st.session_state.get("last_submission")
+                        if latest and st.session_state.get("last_problem") == selected:
+                            st.markdown("#### 本题最新提交")
+                            auto = st.checkbox(
+                                "自动刷新结果", value=submitted_now, key=f"auto-{selected}"
+                            )
+                            render_submission_result(latest, auto_refresh=auto)
         except Exception as exc:
             show_error(exc)
-    with records_tab:
+    with tabs[1]:
         try:
             data = client().get(
                 "/api/submissions/",
@@ -295,36 +397,19 @@ def submissions_page() -> None:
             st.dataframe(data["submissions"], width="stretch", hide_index=True)
         except Exception as exc:
             show_error(exc)
-    with detail_tab:
+    with tabs[2]:
         submission_id = st.text_input(
             "Submission ID", value=st.session_state.get("last_submission", "")
         )
-        auto = st.checkbox("自动轮询一次", value=False)
+        auto = st.checkbox("自动刷新结果", value=False, key="detail-auto")
         if st.button("查询结果") or (auto and submission_id):
             try:
-                result = client().get(f"/api/submissions/{submission_id}")
-                st.status(
-                    f"状态：{result['status']}",
-                    state="running" if result["status"] == "pending" else "complete",
-                )
-                if result["status"] != "pending":
-                    c1, c2 = st.columns(2)
-                    c1.metric("得分", result.get("score", 0))
-                    c2.metric("总分", result.get("counts", 0))
-                    st.write("编译信息", result.get("compile_info"))
-                    st.write("运行信息", result.get("run_info"))
-                    if result.get("error_info"):
-                        st.error(result["error_info"])
-                    try:
-                        log = client().get(f"/api/submissions/{submission_id}/log")
-                        st.dataframe(log["details"], width="stretch", hide_index=True)
-                    except APIError as exc:
-                        st.info(f"测试点日志不可见：{exc}")
-                elif auto:
-                    time.sleep(1)
-                    st.rerun()
+                render_submission_result(submission_id, auto_refresh=auto)
             except Exception as exc:
                 show_error(exc)
+    if user["role"] == "admin":
+        with tabs[3]:
+            problem_management(all_problems)
 
 
 def ai_page() -> None:
@@ -408,7 +493,7 @@ def ai_page() -> None:
                 show_error(exc)
         if st.session_state.get("ai_result") and st.button("导入题目新增表单"):
             st.session_state.ai_problem = st.session_state.ai_result["problem"]
-            st.success("已导入。请前往“题目中心 → 新增题目”审阅并保存。")
+            st.success("已导入。请前往“题目与评测 → 题目管理 → 新增题目”审阅并保存。")
     with history_tab:
         try:
             tasks = client().get("/api/ai/problem-tasks/")
@@ -432,15 +517,14 @@ current = st.session_state.get("user")
 st.sidebar.caption(
     f"已登录：{current['username']} ({current['role']})" if current else "当前未登录"
 )
-pages = ["账户", "个人信息", "题目中心", "评测中心", "AI 智能命题"]
+pages = ["账户", "个人信息", "题目与评测", "AI 智能命题"]
 if current and current["role"] == "admin":
     pages.append("用户管理")
 page = st.sidebar.radio("导航", pages)
 {
     "账户": auth_page,
     "个人信息": profile_page,
-    "题目中心": problems_page,
-    "评测中心": submissions_page,
+    "题目与评测": workspace_page,
     "AI 智能命题": ai_page,
     "用户管理": admin_page,
 }[page]()

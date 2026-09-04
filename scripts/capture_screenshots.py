@@ -41,8 +41,11 @@ def main() -> None:
         page.get_by_role("button", name="登录", exact=True).click()
         page.wait_for_timeout(1800)
         page.screenshot(path=OUTPUT / "02-account.png", full_page=True)
-        page.get_by_text("题目中心", exact=True).last.click()
+        page.get_by_text("题目与评测", exact=True).last.click()
         page.wait_for_timeout(1500)
+        workspace = page.locator("body").inner_text()
+        assert "按标签查找" in workspace
+        assert "提交代码" in workspace
         page.screenshot(path=OUTPUT / "03-problems.png", full_page=True)
         page.get_by_text("AI 智能命题", exact=True).last.click()
         page.wait_for_timeout(1200)

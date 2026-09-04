@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,9 +42,32 @@ def apply_problem(problem: Problem, body: ProblemBody) -> None:
 
 
 @router.get("/")
-async def list_problems(_: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def list_problems(
+    tag: str | None = Query(default=None, max_length=50),
+    _: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
     problems = (await db.scalars(select(Problem).order_by(Problem.id))).all()
-    return envelope([{"id": item.id, "title": item.title} for item in problems])
+    if tag is not None:
+        normalized_tag = tag.strip().casefold()
+        if not normalized_tag:
+            fail(400, "tag must not be blank")
+        problems = [
+            item
+            for item in problems
+            if normalized_tag in {value.casefold() for value in (item.tags or [])}
+        ]
+    return envelope(
+        [
+            {
+                "id": item.id,
+                "title": item.title,
+                "tags": item.tags or [],
+                "difficulty": item.difficulty or "",
+            }
+            for item in problems
+        ]
+    )
 
 
 @router.post("/")

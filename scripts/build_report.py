@@ -233,7 +233,7 @@ def build() -> None:
             "默认值。用户密码使用 bcrypt 哈希，随机 Session Token 仅以 SHA-256 摘要存入数据库，"
             "Cookie 设置 HttpOnly 与 SameSite。角色包括 user、admin 和 banned。"
         ),
-        *screenshot("03-problems.png", "图 2  题目列表、详情和管理页面"),
+        *screenshot("03-problems.png", "图 2  题目、标签筛选与评测同屏工作区"),
         PageBreak(),
         p("3.2 异步评测与提交管理", "H2"),
         p(

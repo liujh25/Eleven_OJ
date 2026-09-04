@@ -43,7 +43,20 @@ async def test_problem_crud_and_validation(api):
     duplicate = await api.post("/api/problems/", json=problem_body())
     assert duplicate.status_code == 409
     listing = await api.get("/api/problems/")
-    assert listing.json()["data"] == [{"id": "sum_2", "title": "两数之和"}]
+    assert listing.json()["data"] == [
+        {
+            "id": "sum_2",
+            "title": "两数之和",
+            "tags": ["基础", "数学"],
+            "difficulty": "",
+        }
+    ]
+    tagged = await api.get("/api/problems/", params={"tag": " 数学 "})
+    assert [item["id"] for item in tagged.json()["data"]] == ["sum_2"]
+    missing_tag = await api.get("/api/problems/", params={"tag": "图论"})
+    assert missing_tag.json()["data"] == []
+    blank_tag = await api.get("/api/problems/", params={"tag": "   "})
+    assert blank_tag.status_code == 400
     detail = (await api.get("/api/problems/sum_2")).json()["data"]
     assert detail["hint"] == ""
     assert detail["time_limit"] == 1.0
