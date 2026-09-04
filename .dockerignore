@@ -1,0 +1,13 @@
+.git
+.github
+.venv
+__pycache__
+*.pyc
+*.db
+*.sqlite3
+data
+tmp
+htmlcov
+output
+tests
+
