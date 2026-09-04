@@ -121,7 +121,7 @@ def admin_page() -> None:
     st.header("用户管理")
     try:
         data = client().get("/api/users/", params={"page": 1, "page_size": 100})
-        st.dataframe(data["users"], use_container_width=True, hide_index=True)
+        st.dataframe(data["users"], width="stretch", hide_index=True)
         with st.form("role"):
             user_id = st.selectbox(
                 "用户",
@@ -286,7 +286,7 @@ def submissions_page() -> None:
                 params={"user_id": user["user_id"], "page": 1, "page_size": 100},
             )
             st.metric("提交总数", data["total"])
-            st.dataframe(data["submissions"], use_container_width=True, hide_index=True)
+            st.dataframe(data["submissions"], width="stretch", hide_index=True)
         except Exception as exc:
             show_error(exc)
     with detail_tab:
@@ -311,7 +311,7 @@ def submissions_page() -> None:
                         st.error(result["error_info"])
                     try:
                         log = client().get(f"/api/submissions/{submission_id}/log")
-                        st.dataframe(log["details"], use_container_width=True, hide_index=True)
+                        st.dataframe(log["details"], width="stretch", hide_index=True)
                     except APIError as exc:
                         st.info(f"测试点日志不可见：{exc}")
                 elif auto:
@@ -416,7 +416,7 @@ def ai_page() -> None:
                 }
                 for item in tasks
             ]
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.dataframe(rows, width="stretch", hide_index=True)
         except Exception as exc:
             show_error(exc)
 
