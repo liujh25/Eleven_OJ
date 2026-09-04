@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from oj.ai_tasks import cancel_all_ai_tasks
 from oj.api import envelope
 from oj.config import get_settings
 from oj.db import get_db
@@ -29,6 +30,7 @@ async def reset_system(
     _: User = Depends(admin_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await cancel_all_ai_tasks()
     await cancel_all()
     for model in (
         TestCaseResult,

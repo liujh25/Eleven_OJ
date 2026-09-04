@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -71,3 +73,25 @@ class SubmissionBody(StrictModel):
     problem_id: str = Field(min_length=1, max_length=80)
     language: str = Field(min_length=1, max_length=40)
     code: str = Field(min_length=1, max_length=200_000)
+
+
+class AIConfigBody(StrictModel):
+    provider_url: str = Field(min_length=8, max_length=500)
+    model: str = Field(min_length=1, max_length=100)
+    api_key: str = Field(min_length=1, max_length=500)
+    input_price: float = Field(default=0.0, ge=0)
+    output_price: float = Field(default=0.0, ge=0)
+    price_unit: int = Field(default=1_000_000, gt=0)
+
+    @field_validator("provider_url")
+    @classmethod
+    def valid_provider_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username:
+            raise ValueError("provider_url must be an http(s) URL without credentials")
+        return value.rstrip("/")
+
+
+class AITaskBody(StrictModel):
+    requirement: str = Field(min_length=10, max_length=10_000)
+    problem_id: str | None = Field(default=None, max_length=80)

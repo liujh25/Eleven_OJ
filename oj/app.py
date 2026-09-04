@@ -7,15 +7,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from oj.api import envelope
+from oj.ai_tasks import cancel_all_ai_tasks
 from oj.db import close_database, initialize_database
 from oj.judge_tasks import cancel_all
-from oj.routers import languages, logs, problems, submissions, system, users
+from oj.routers import ai, languages, logs, problems, submissions, system, users
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await initialize_database()
     yield
+    await cancel_all_ai_tasks()
     await cancel_all()
     await close_database()
 
@@ -27,6 +29,7 @@ app.include_router(languages.router)
 app.include_router(submissions.router)
 app.include_router(logs.router)
 app.include_router(system.router)
+app.include_router(ai.router)
 
 
 @app.exception_handler(HTTPException)

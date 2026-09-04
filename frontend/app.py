@@ -302,12 +302,112 @@ def submissions_page() -> None:
                 show_error(exc)
 
 
+def ai_page() -> None:
+    if not require_login():
+        return
+    st.header("AI 智能命题")
+    config_tab, author_tab, history_tab = st.tabs(["模型配置", "智能命题", "任务记录"])
+    with config_tab:
+        st.info("模型密钥加密保存在后端，不会在查询、日志或页面中回显。")
+        with st.form("ai-config"):
+            provider_url = st.text_input("提供商 URL", placeholder="https://provider.example/v1")
+            model = st.text_input("模型名称")
+            api_key = st.text_input("模型密钥", type="password")
+            c1, c2, c3 = st.columns(3)
+            input_price = c1.number_input("输入价格", min_value=0.0, format="%.6f")
+            output_price = c2.number_input("输出价格", min_value=0.0, format="%.6f")
+            price_unit = c3.number_input("计价 Token 数", min_value=1, value=1_000_000)
+            if st.form_submit_button("保存配置", type="primary"):
+                try:
+                    client().put(
+                        "/api/ai/model-config",
+                        json={
+                            "provider_url": provider_url,
+                            "model": model,
+                            "api_key": api_key,
+                            "input_price": input_price,
+                            "output_price": output_price,
+                            "price_unit": price_unit,
+                        },
+                    )
+                    st.success("模型配置已安全保存")
+                except Exception as exc:
+                    show_error(exc)
+    with author_tab:
+        try:
+            problems = client().get("/api/problems/")
+        except Exception:
+            problems = []
+        with st.form("ai-author"):
+            requirement = st.text_area(
+                "命题需求",
+                placeholder="例如：设计一道面向初学者的列表与循环题，难度中等，包含规模边界测试。",
+                height=180,
+            )
+            reference = st.selectbox(
+                "参考或修改已有题目（可选）",
+                [""] + [item["id"] for item in problems],
+            )
+            if st.form_submit_button("开始命题", type="primary"):
+                try:
+                    data = client().post(
+                        "/api/ai/problem-tasks/",
+                        json={"requirement": requirement, "problem_id": reference or None},
+                    )
+                    st.session_state.ai_task_id = data["task_id"]
+                    st.success(f"任务已创建：{data['task_id']}")
+                except Exception as exc:
+                    show_error(exc)
+        task_id = st.text_input("当前任务 ID", value=st.session_state.get("ai_task_id", ""))
+        c1, c2 = st.columns(2)
+        if c1.button("刷新进度", disabled=not task_id):
+            try:
+                task = client().get(f"/api/ai/problem-tasks/{task_id}")
+                st.write(f"**{task['status']}** · {task['progress']}")
+                u1, u2, u3 = st.columns(3)
+                u1.metric("输入 Token", task["usage"]["input_tokens"])
+                u2.metric("输出 Token", task["usage"]["output_tokens"])
+                u3.metric("费用 USD", f"{task['usage']['cost']:.8f}")
+                if task.get("error"):
+                    st.error(task["error"])
+                if task.get("result"):
+                    st.json(task["result"])
+                    st.session_state.ai_result = task["result"]
+            except Exception as exc:
+                show_error(exc)
+        if c2.button("中断任务", disabled=not task_id):
+            try:
+                client().put(f"/api/ai/problem-tasks/{task_id}/cancel")
+                st.warning("任务已中断")
+            except Exception as exc:
+                show_error(exc)
+        if st.session_state.get("ai_result") and st.button("导入题目新增表单"):
+            st.session_state.ai_problem = st.session_state.ai_result["problem"]
+            st.success("已导入。请前往“题目中心 → 新增题目”审阅并保存。")
+    with history_tab:
+        try:
+            tasks = client().get("/api/ai/problem-tasks/")
+            rows = [
+                {
+                    "task_id": item["task_id"],
+                    "status": item["status"],
+                    "progress": item["progress"],
+                    "tokens": item["usage"]["total_tokens"],
+                    "cost": item["usage"]["cost"],
+                }
+                for item in tasks
+            ]
+            st.dataframe(rows, use_container_width=True, hide_index=True)
+        except Exception as exc:
+            show_error(exc)
+
+
 hero()
 current = st.session_state.get("user")
 st.sidebar.caption(
     f"已登录：{current['username']} ({current['role']})" if current else "当前未登录"
 )
-pages = ["账户", "个人信息", "题目中心", "评测中心"]
+pages = ["账户", "个人信息", "题目中心", "评测中心", "AI 智能命题"]
 if current and current["role"] == "admin":
     pages.append("用户管理")
 page = st.sidebar.radio("导航", pages)
@@ -316,5 +416,6 @@ page = st.sidebar.radio("导航", pages)
     "个人信息": profile_page,
     "题目中心": problems_page,
     "评测中心": submissions_page,
+    "AI 智能命题": ai_page,
     "用户管理": admin_page,
 }[page]()
