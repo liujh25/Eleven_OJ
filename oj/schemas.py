@@ -56,3 +56,18 @@ class ProblemBody(StrictModel):
 
 class VisibilityBody(StrictModel):
     public_cases: bool = False
+
+
+class LanguageBody(StrictModel):
+    name: str = Field(min_length=1, max_length=40, pattern=r"^[a-z][a-z0-9_+-]*$")
+    file_ext: str = Field(min_length=2, max_length=16, pattern=r"^\.[A-Za-z0-9]+$")
+    compile_cmd: str | None = None
+    run_cmd: str = Field(min_length=1, max_length=500)
+    time_limit: float = Field(default=3.0, gt=0, le=60)
+    memory_limit: int = Field(default=128, ge=16, le=2048)
+
+
+class SubmissionBody(StrictModel):
+    problem_id: str = Field(min_length=1, max_length=80)
+    language: str = Field(min_length=1, max_length=40)
+    code: str = Field(min_length=1, max_length=200_000)
