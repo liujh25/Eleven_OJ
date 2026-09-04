@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from oj.api import envelope
 from oj.db import close_database, initialize_database
 from oj.judge_tasks import cancel_all
-from oj.routers import languages, problems, submissions, users
+from oj.routers import languages, logs, problems, submissions, system, users
 
 
 @asynccontextmanager
@@ -25,6 +25,8 @@ app.include_router(users.router)
 app.include_router(problems.router)
 app.include_router(languages.router)
 app.include_router(submissions.router)
+app.include_router(logs.router)
+app.include_router(system.router)
 
 
 @app.exception_handler(HTTPException)

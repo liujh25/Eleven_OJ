@@ -8,7 +8,7 @@ from oj.api import envelope, fail
 from oj.db import get_db
 from oj.dependencies import admin_user, current_user
 from oj.models import Problem, User
-from oj.schemas import ProblemBody
+from oj.schemas import ProblemBody, VisibilityBody
 
 router = APIRouter(prefix="/api/problems", tags=["problems"])
 
@@ -114,3 +114,21 @@ async def delete_problem(
     await db.delete(problem)
     await db.commit()
     return envelope({"id": problem_id}, "delete success")
+
+
+@router.put("/{problem_id}/log_visibility")
+async def update_log_visibility(
+    problem_id: str,
+    body: VisibilityBody,
+    _: User = Depends(admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    problem = await db.get(Problem, problem_id)
+    if problem is None:
+        fail(404, "problem not found")
+    problem.public_cases = body.public_cases
+    await db.commit()
+    return envelope(
+        {"problem_id": problem.id, "public_cases": problem.public_cases},
+        "log visibility updated",
+    )
