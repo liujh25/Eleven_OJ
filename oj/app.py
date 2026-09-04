@@ -8,13 +8,15 @@ from fastapi.responses import JSONResponse
 
 from oj.api import envelope
 from oj.db import close_database, initialize_database
-from oj.routers import languages, problems, users
+from oj.judge_tasks import cancel_all
+from oj.routers import languages, problems, submissions, users
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await initialize_database()
     yield
+    await cancel_all()
     await close_database()
 
 
@@ -22,6 +24,7 @@ app = FastAPI(title="Async OJ", version="1.0.0", lifespan=lifespan)
 app.include_router(users.router)
 app.include_router(problems.router)
 app.include_router(languages.router)
+app.include_router(submissions.router)
 
 
 @app.exception_handler(HTTPException)
