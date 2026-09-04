@@ -28,6 +28,9 @@ st.markdown(
     """
     <style>
     .block-container {padding-top: 1.8rem; max-width: 1180px;}
+    [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {
+      display:none !important;
+    }
     [data-testid="stMetric"] {
       background:#f7f9fc; border:1px solid #e7eaf0; padding:12px; border-radius:12px;
     }
@@ -76,9 +79,78 @@ def require_login() -> dict | None:
     return user
 
 
-def hero() -> None:
+def subpage_shell(title: str) -> None:
+    section_codes = {
+        "账户": "ACCOUNT ACCESS",
+        "个人信息": "OPERATOR PROFILE",
+        "题目与评测": "EXERCISE & JUDGE",
+        "AI 智能命题": "AI AUTHORING",
+        "用户管理": "ADMINISTRATION",
+    }
     st.markdown(
-        '<div class="hero"><h1>⚡ Async OJ</h1><p>异步评测 · 细粒度权限 · AI 辅助命题</p></div>',
+        """
+        <style>
+        .block-container {max-width:1380px;padding-top:1rem;padding-bottom:3rem}
+        .stApp {
+          background:
+            linear-gradient(118deg,#07101a 0%,#111d2a 13%,#e5eaf0 13.1%,#f8fafc 100%);
+        }
+        .subpage-head {
+          margin:.6rem 0 1.35rem;padding:21px 28px 20px 34px;color:white;
+          background:linear-gradient(100deg,rgba(8,18,30,.98),rgba(25,44,64,.94));
+          border-left:8px solid #f97316;border-bottom:3px solid #2563eb;
+          box-shadow:0 14px 34px rgba(15,23,42,.24);
+          clip-path:polygon(0 0,97% 0,100% 35%,100% 100%,0 100%);
+        }
+        .subpage-head small {color:#93c5fd;letter-spacing:.2em;font-weight:800}
+        .subpage-head h1 {margin:5px 0 0;color:white;font:900 34px/1.15 'Segoe UI',sans-serif}
+        div[data-testid="stButton"] > button,
+        div[data-testid="stFormSubmitButton"] > button {
+          border-radius:2px;border:1px solid #cbd5e1;border-left:5px solid #f97316;
+          background:white;color:#0f172a;font-weight:800;box-shadow:0 5px 14px rgba(15,23,42,.1);
+        }
+        div[data-testid="stButton"] > button:hover,
+        div[data-testid="stFormSubmitButton"] > button:hover {
+          border-color:#2563eb;border-left-color:#2563eb;color:#1d4ed8;
+          transform:translateY(-1px);
+        }
+        div[data-testid="stForm"], div[data-testid="stExpander"],
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+          background:rgba(255,255,255,.92);border-radius:2px!important;
+          border-color:#cbd5e1!important;box-shadow:0 9px 24px rgba(15,23,42,.08);
+        }
+        [data-baseweb="tab-list"] {
+          gap:4px;background:#111c29;padding:5px 8px;border-left:5px solid #2563eb;
+        }
+        [data-baseweb="tab"] {color:#cbd5e1;font-weight:750;padding:9px 16px}
+        [data-baseweb="tab"][aria-selected="true"] {color:white;background:#243449}
+        [data-testid="stMetric"] {
+          background:rgba(255,255,255,.95);border-radius:2px;border-left:5px solid #2563eb;
+          box-shadow:0 8px 20px rgba(15,23,42,.1);
+        }
+        [data-baseweb="input"], [data-baseweb="select"] > div,
+        [data-baseweb="textarea"] {
+          border-radius:2px!important;background:#f8fafc!important;
+        }
+        h2, h3 {color:#0f172a}
+        hr {border-color:#94a3b8}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.button(
+        "← 返回首页",
+        key=f"back-home-{title}",
+        on_click=set_page,
+        args=("首页",),
+    )
+    st.markdown(
+        f"""
+        <div class="subpage-head">
+          <small>ASYNC OJ // {section_codes.get(title, "CONTROL")}</small>
+          <h1>{escape(title)}</h1>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -249,7 +321,6 @@ def dashboard_page() -> None:
 
 
 def auth_page() -> None:
-    st.header("账户")
     user = st.session_state.get("user")
     if user:
         c1, c2, c3 = st.columns(3)
@@ -292,7 +363,6 @@ def profile_page() -> None:
     user = require_login()
     if not user:
         return
-    st.header("个人信息")
     try:
         data = client().get(f"/api/users/{user['user_id']}")
         c1, c2, c3, c4, c5, c6 = st.columns(6)
@@ -303,6 +373,14 @@ def profile_page() -> None:
         c5.metric("完成题目", data["resolve_count"])
         c6.metric("AI 出题", data["ai_problem_count"])
         st.caption(f"加入时间：{data['join_time']} · 用户 ID：{data['user_id']}")
+        if st.button("退出登录", key="profile-logout"):
+            try:
+                client().post("/api/auth/logout")
+            except APIError:
+                pass
+            st.session_state.pop("user", None)
+            st.session_state.nav_page = "首页"
+            st.rerun()
     except Exception as exc:
         show_error(exc)
 
@@ -314,7 +392,6 @@ def admin_page() -> None:
     if user["role"] != "admin":
         st.warning("此页面仅管理员可见。")
         return
-    st.header("用户管理")
     try:
         data = client().get("/api/users/", params={"page": 1, "page_size": 100})
         st.dataframe(data["users"], width="stretch", hide_index=True)
@@ -498,7 +575,6 @@ def workspace_page() -> None:
     user = require_login()
     if not user:
         return
-    st.header("题目与评测")
     try:
         all_problems = client().get("/api/problems/")
         languages = client().get("/api/languages/")["name"]
@@ -605,7 +681,6 @@ def workspace_page() -> None:
 def ai_page() -> None:
     if not require_login():
         return
-    st.header("AI 智能命题")
     config_tab, author_tab, history_tab = st.tabs(["模型配置", "智能命题", "任务记录"])
     with config_tab:
         st.info("模型密钥加密保存在后端，不会在查询、日志或页面中回显。")
@@ -703,17 +778,14 @@ def ai_page() -> None:
 
 
 current = st.session_state.get("user")
-st.sidebar.caption(
-    f"已登录：{current['username']} ({current['role']})" if current else "当前未登录"
-)
 pages = ["首页", "账户", "个人信息", "题目与评测", "AI 智能命题"]
 if current and current["role"] == "admin":
     pages.append("用户管理")
 if st.session_state.get("nav_page") not in pages:
     st.session_state.nav_page = "首页"
-page = st.sidebar.radio("导航", pages, key="nav_page")
+page = st.session_state.nav_page
 if page != "首页":
-    hero()
+    subpage_shell(page)
 {
     "首页": dashboard_page,
     "账户": auth_page,

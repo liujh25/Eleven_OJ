@@ -100,7 +100,13 @@ def test_streamlit_app_smoke():
     app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
     app.run(timeout=20)
     assert not app.exception
+    assert not app.sidebar.radio
     labels = {button.label for button in app.button}
     assert any("习题与评测" in label for label in labels)
     assert any("登录 / 注册" in label for label in labels)
     assert any("AI 智能命题" in label for label in labels)
+    next(button for button in app.button if "登录 / 注册" in button.label).click().run()
+    assert not app.exception
+    assert any(button.label == "← 返回首页" for button in app.button)
+    next(button for button in app.button if button.label == "← 返回首页").click().run()
+    assert any("习题与评测" in button.label for button in app.button)
