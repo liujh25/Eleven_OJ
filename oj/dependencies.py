@@ -10,9 +10,7 @@ from oj.models import LoginSession, User, utcnow
 from oj.security import token_hash
 
 
-async def current_user(
-    request: Request, session: AsyncSession = Depends(get_db)
-) -> User:
+async def current_user(request: Request, session: AsyncSession = Depends(get_db)) -> User:
     raw_token = request.cookies.get(get_settings().session_cookie)
     if not raw_token:
         fail(401, "not logged in")
@@ -34,4 +32,3 @@ async def admin_user(user: User = Depends(current_user)) -> User:
     if user.role != "admin":
         fail(403, "administrator required")
     return user
-

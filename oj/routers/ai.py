@@ -89,9 +89,7 @@ async def create_task(
 
 
 @router.get("/problem-tasks/")
-async def list_tasks(
-    user: User = Depends(current_user), db: AsyncSession = Depends(get_db)
-):
+async def list_tasks(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     query = select(AITask).order_by(AITask.created_at.desc())
     if user.role != "admin":
         query = query.where(AITask.user_id == user.id)

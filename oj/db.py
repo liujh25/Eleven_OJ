@@ -57,4 +57,3 @@ async def initialize_database() -> None:
 
 async def close_database() -> None:
     await engine.dispose()
-

@@ -62,4 +62,3 @@ async def cancel_all() -> None:
         task.cancel()
     if _tasks:
         await asyncio.gather(*_tasks, return_exceptions=True)
-

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import HTTPException
 
@@ -9,7 +9,7 @@ def envelope(data: Any = None, msg: str = "success", code: int = 200) -> dict[st
     return {"code": code, "msg": msg, "data": data}
 
 
-def fail(code: int, msg: str) -> None:
+def fail(code: int, msg: str) -> NoReturn:
     raise HTTPException(status_code=code, detail=msg)
 
 
@@ -24,4 +24,3 @@ def page_slice(page: int | None, page_size: int | None) -> tuple[int | None, int
         return None, None
     effective_page = page or 1
     return (effective_page - 1) * page_size, page_size
-

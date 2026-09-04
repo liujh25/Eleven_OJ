@@ -30,4 +30,3 @@ def token_hash(token: str) -> str:
 
 def session_expiry(hours: int):
     return utcnow() + timedelta(hours=hours)
-

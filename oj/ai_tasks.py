@@ -113,10 +113,14 @@ async def run_ai_task(task_id: str) -> None:
             "每个测试点必须给出确定的 input/output，覆盖普通、边界、极端和易错情况。"
             "顶层字段必须为 problem、coverage、notes。problem 严格包含 id,title,description,"
             "input_description,output_description,samples,constraints,testcases,hint,source,tags,"
-            "time_limit,memory_limit,author,difficulty。samples/testcases 是 input/output 字符串列表。"
+            "time_limit,memory_limit,author,difficulty。"
+            "samples/testcases 是 input/output 字符串列表。"
         )
-        prompt = f"命题需求：{requirement}\n已有题目（可为空）：{json.dumps(reference_data, ensure_ascii=False)}"
-        draft, first_usage = await _chat(config, [{"role": "system", "content": system}, {"role": "user", "content": prompt}])
+        reference_json = json.dumps(reference_data, ensure_ascii=False)
+        prompt = f"命题需求：{requirement}\n已有题目（可为空）：{reference_json}"
+        draft, first_usage = await _chat(
+            config, [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+        )
         in_tokens, out_tokens = _usage(first_usage)
         await _update(
             task_id,

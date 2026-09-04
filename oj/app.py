@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from oj.api import envelope
 from oj.ai_tasks import cancel_all_ai_tasks
+from oj.api import envelope
 from oj.db import close_database, initialize_database
 from oj.judge_tasks import cancel_all
 from oj.routers import ai, languages, logs, problems, submissions, system, users
@@ -34,7 +34,9 @@ app.include_router(ai.router)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: Request, exc: HTTPException):
-    return JSONResponse(status_code=exc.status_code, content=envelope(None, str(exc.detail), exc.status_code))
+    return JSONResponse(
+        status_code=exc.status_code, content=envelope(None, str(exc.detail), exc.status_code)
+    )
 
 
 @app.exception_handler(RequestValidationError)

@@ -25,7 +25,9 @@ class OJClient:
         except (httpx.HTTPError, ValueError) as exc:
             raise APIError(0, f"无法连接后端：{exc}") from exc
         if response.is_error or payload.get("code") != 200:
-            raise APIError(response.status_code, payload.get("msg", "请求失败"), payload.get("data"))
+            raise APIError(
+                response.status_code, payload.get("msg", "请求失败"), payload.get("data")
+            )
         return payload.get("data")
 
     def get(self, path: str, **kwargs) -> Any:
@@ -39,4 +41,3 @@ class OJClient:
 
     def delete(self, path: str, **kwargs) -> Any:
         return self.request("DELETE", path, **kwargs)
-

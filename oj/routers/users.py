@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,7 +80,9 @@ async def logout(
     settings = get_settings()
     raw_token = request.cookies.get(settings.session_cookie)
     if raw_token:
-        await db.execute(delete(LoginSession).where(LoginSession.token_hash == token_hash(raw_token)))
+        await db.execute(
+            delete(LoginSession).where(LoginSession.token_hash == token_hash(raw_token))
+        )
         await db.commit()
     response.delete_cookie(settings.session_cookie)
     return envelope(None, "logout success")
@@ -161,4 +161,3 @@ async def list_users(
         query = query.offset(offset or 0).limit(limit)
     users = list((await db.scalars(query)).all())
     return envelope({"total": total, "users": [await user_data(db, user) for user in users]})
-

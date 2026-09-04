@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import psutil
+import psutil  # type: ignore[import-untyped]
 
 from oj.models import Language, Problem
 
@@ -26,6 +26,11 @@ def parse_command(template: str, src: Path, exe: Path) -> list[str]:
         raise ValueError("only {src} and {exe} placeholders are allowed")
     rendered = template.format(src=str(src.resolve()), exe=str(exe.resolve()))
     args = shlex.split(rendered, posix=os.name != "nt")
+    if os.name == "nt":
+        args = [
+            arg[1:-1] if len(arg) >= 2 and arg[0] == arg[-1] and arg[0] in "\"'" else arg
+            for arg in args
+        ]
     if not args:
         raise ValueError("empty command")
     return args
@@ -54,11 +59,14 @@ def _resource_limiter(memory_mb: int, cpu_seconds: int):
             import resource
 
             memory_bytes = memory_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024, 16 * 1024 * 1024))
-            resource.setrlimit(resource.RLIMIT_NPROC, (32, 32))
-            os.setsid()
+            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))  # type: ignore[attr-defined]
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))  # type: ignore[attr-defined]
+            resource.setrlimit(  # type: ignore[attr-defined]
+                resource.RLIMIT_FSIZE,  # type: ignore[attr-defined]
+                (16 * 1024 * 1024, 16 * 1024 * 1024),
+            )
+            resource.setrlimit(resource.RLIMIT_NPROC, (32, 32))  # type: ignore[attr-defined]
+            os.setsid()  # type: ignore[attr-defined]
 
     return limit
 
@@ -130,7 +138,7 @@ async def run_process(
         timed_out = True
         if os.name == "posix":
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
+                os.killpg(proc.pid, signal.SIGKILL)  # type: ignore[attr-defined]
             except ProcessLookupError:
                 pass
         _kill_tree(proc.pid)
@@ -173,7 +181,14 @@ async def evaluate(problem: Problem, language: Language, code: str) -> dict[str,
                     "compile_info": {"result": "failed", "message": message},
                     "run_info": {"result": "not_started", "message": "compilation failed"},
                     "error_info": "",
-                    "details": [{"id": 1, "result": "CE", "time": compiled.elapsed, "memory": compiled.memory}],
+                    "details": [
+                        {
+                            "id": 1,
+                            "result": "CE",
+                            "time": compiled.elapsed,
+                            "memory": compiled.memory,
+                        }
+                    ],
                 }
             compile_info = {"result": "success", "message": compiled.stderr}
 

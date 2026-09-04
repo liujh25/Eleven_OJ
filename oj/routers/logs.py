@@ -52,9 +52,7 @@ async def submission_log(
         }
         for item in results
     ]
-    return envelope(
-        {"details": details, "score": submission.score, "counts": submission.counts}
-    )
+    return envelope({"details": details, "score": submission.score, "counts": submission.counts})
 
 
 @router.get("/logs/access/")

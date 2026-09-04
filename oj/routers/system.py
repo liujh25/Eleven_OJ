@@ -9,9 +9,9 @@ from oj.db import get_db
 from oj.dependencies import admin_user
 from oj.judge_tasks import cancel_all
 from oj.models import (
+    AccessAudit,
     AIConfig,
     AITask,
-    AccessAudit,
     Language,
     LoginSession,
     Problem,

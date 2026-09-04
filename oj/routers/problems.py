@@ -42,9 +42,7 @@ def apply_problem(problem: Problem, body: ProblemBody) -> None:
 
 
 @router.get("/")
-async def list_problems(
-    _: User = Depends(current_user), db: AsyncSession = Depends(get_db)
-):
+async def list_problems(_: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     problems = (await db.scalars(select(Problem).order_by(Problem.id))).all()
     return envelope([{"id": item.id, "title": item.title} for item in problems])
 

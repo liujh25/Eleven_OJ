@@ -12,8 +12,13 @@ st.markdown(
     """
     <style>
     .block-container {padding-top: 1.8rem; max-width: 1180px;}
-    [data-testid="stMetric"] {background:#f7f9fc;border:1px solid #e7eaf0;padding:12px;border-radius:12px;}
-    .hero {padding:1.4rem 1.7rem;border-radius:18px;background:linear-gradient(120deg,#172554,#2563eb);color:white;margin-bottom:1.2rem;}
+    [data-testid="stMetric"] {
+      background:#f7f9fc; border:1px solid #e7eaf0; padding:12px; border-radius:12px;
+    }
+    .hero {
+      padding:1.4rem 1.7rem; border-radius:18px;
+      background:linear-gradient(120deg,#172554,#2563eb); color:white; margin-bottom:1.2rem;
+    }
     .hero h1 {margin:0;color:white}.hero p {margin:.35rem 0 0;color:#dbeafe}
     </style>
     """,
@@ -148,17 +153,29 @@ def problem_payload(prefix: str, existing: dict | None = None) -> dict | None:
         constraints = st.text_area("数据范围", value=value.get("constraints", ""))
         samples = st.text_area(
             "样例 JSON",
-            value=json.dumps(value.get("samples", [{"input": "1 2\n", "output": "3\n"}]), ensure_ascii=False, indent=2),
+            value=json.dumps(
+                value.get("samples", [{"input": "1 2\n", "output": "3\n"}]),
+                ensure_ascii=False,
+                indent=2,
+            ),
             height=130,
         )
         testcases = st.text_area(
             "测试点 JSON",
-            value=json.dumps(value.get("testcases", [{"input": "1 2\n", "output": "3\n"}]), ensure_ascii=False, indent=2),
+            value=json.dumps(
+                value.get("testcases", [{"input": "1 2\n", "output": "3\n"}]),
+                ensure_ascii=False,
+                indent=2,
+            ),
             height=160,
         )
         c1, c2, c3 = st.columns(3)
-        time_limit = c1.number_input("时间限制（秒）", 0.05, 60.0, float(value.get("time_limit", 3.0)))
-        memory_limit = c2.number_input("内存限制（MB）", 16, 2048, int(value.get("memory_limit", 128)))
+        time_limit = c1.number_input(
+            "时间限制（秒）", 0.05, 60.0, float(value.get("time_limit", 3.0))
+        )
+        memory_limit = c2.number_input(
+            "内存限制（MB）", 16, 2048, int(value.get("memory_limit", 128))
+        )
         difficulty = c3.text_input("难度", value=value.get("difficulty", ""))
         tags = st.text_input("标签（逗号分隔）", value=", ".join(value.get("tags", [])))
         hint = st.text_input("提示", value=value.get("hint", ""))
@@ -206,9 +223,8 @@ def problems_page() -> None:
                     st.markdown(problem["description"])
                     st.code(problem["input_description"], language=None)
                     st.write("样例", problem["samples"])
-                    st.caption(
-                        f"时限 {problem['time_limit']}s · 内存 {problem['memory_limit']}MB · {', '.join(problem['tags'])}"
-                    )
+                    limits = f"时限 {problem['time_limit']}s · 内存 {problem['memory_limit']}MB"
+                    st.caption(f"{limits} · {', '.join(problem['tags'])}")
                     if st.session_state.user["role"] == "admin" and st.button(
                         "删除", key=f"delete-{item['id']}"
                     ):
@@ -281,7 +297,10 @@ def submissions_page() -> None:
         if st.button("查询结果") or (auto and submission_id):
             try:
                 result = client().get(f"/api/submissions/{submission_id}")
-                st.status(f"状态：{result['status']}", state="running" if result["status"] == "pending" else "complete")
+                st.status(
+                    f"状态：{result['status']}",
+                    state="running" if result["status"] == "pending" else "complete",
+                )
                 if result["status"] != "pending":
                     c1, c2 = st.columns(2)
                     c1.metric("得分", result.get("score", 0))
