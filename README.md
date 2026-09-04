@@ -24,6 +24,10 @@ Python/C++ 异步评测、提交管理、用户权限、测试点日志、Stream
 建议使用 Python 3.10–3.12 和 GCC 9+。Windows 可以开发和演示，最终资源限制以
 Linux 为准。
 
+Windows 用户可以直接双击项目根目录的 `run.bat`。脚本会检查虚拟环境和依赖，分别
+启动后端与前端，并在服务就绪后打开浏览器。关闭两个服务窗口即可停止平台。仅检查
+环境而不启动服务时可运行 `run.bat --check`。
+
 ```bash
 python -m venv .venv
 # Linux/macOS: source .venv/bin/activate
