@@ -1,0 +1,18 @@
+services:
+  api:
+    build: .
+    environment:
+      OJ_DATABASE_URL: sqlite+aiosqlite:////app/data/oj.db
+      OJ_COOKIE_SECURE: "false"
+    ports: ["8000:8000"]
+    volumes: ["oj-data:/app/data"]
+  frontend:
+    build: .
+    command: ["streamlit", "run", "frontend/app.py", "--server.address", "0.0.0.0"]
+    environment:
+      OJ_API_URL: http://api:8000
+    ports: ["8501:8501"]
+    depends_on: [api]
+volumes:
+  oj-data:
+
