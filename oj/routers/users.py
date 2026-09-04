@@ -8,7 +8,7 @@ from oj.api import envelope, fail, page_slice
 from oj.config import get_settings
 from oj.db import get_db
 from oj.dependencies import admin_user, current_user
-from oj.models import LoginSession, Submission, User
+from oj.models import AITask, LoginSession, Problem, Submission, User
 from oj.schemas import Credentials, RoleUpdate
 from oj.security import (
     hash_password,
@@ -21,22 +21,48 @@ from oj.security import (
 router = APIRouter(prefix="/api", tags=["users"])
 
 
+def difficulty_level_gain(difficulty: str) -> int:
+    value = difficulty.strip().casefold()
+    if any(marker in value for marker in ("hard", "difficult", "困难", "高级")):
+        return 3
+    if any(marker in value for marker in ("medium", "normal", "中等", "普通")):
+        return 2
+    return 1
+
+
 async def user_data(db: AsyncSession, user: User) -> dict:
     submit_count = await db.scalar(
         select(func.count(Submission.id)).where(Submission.user_id == user.id)
     )
-    resolved = await db.scalar(
-        select(func.count(func.distinct(Submission.problem_id))).where(
-            Submission.user_id == user.id, Submission.status == "success", Submission.score > 0
-        )
+    solved_problems = list(
+        (
+            await db.execute(
+                select(Problem.id, Problem.difficulty)
+                .join(Submission, Submission.problem_id == Problem.id)
+                .where(
+                    Submission.user_id == user.id,
+                    Submission.status == "success",
+                    Submission.score == Submission.counts,
+                    Submission.counts > 0,
+                )
+                .distinct()
+            )
+        ).all()
     )
+    ai_problem_count = await db.scalar(
+        select(func.count(AITask.id)).where(AITask.user_id == user.id, AITask.status == "completed")
+    )
+    level_gain = sum(difficulty_level_gain(difficulty or "") for _, difficulty in solved_problems)
     return {
         "user_id": user.id,
         "username": user.username,
         "join_time": user.join_time.date().isoformat(),
         "role": user.role,
         "submit_count": submit_count or 0,
-        "resolve_count": resolved or 0,
+        "resolve_count": len(solved_problems),
+        "ai_problem_count": ai_problem_count or 0,
+        "level": 1 + level_gain,
+        "level_gain": level_gain,
     }
 
 

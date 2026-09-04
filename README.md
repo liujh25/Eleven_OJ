@@ -15,6 +15,10 @@ Python/C++ 异步评测、提交管理、用户权限、测试点日志、Stream
 | Step 6 | 用户、题目与评测同屏工作区、提交记录和结果页面 |
 | Advance | 可配置 OpenAI 兼容模型、进度、取消、Token/费用、题目导入 |
 
+首页采用角色化控制台布局：左侧展示用户等级和角色背景，右侧提供习题评测、账户、
+管理员用户管理和 AI 命题入口。满分通过的新题目按难度升级，简单、中等、困难题
+分别提升 1、2、3 级；同一题目的重复通过不会重复计算。
+
 所有 API 路由均使用 `async def`，响应统一为 `{"code", "msg", "data"}`，HTTP
 状态码与 `code` 相同。详细设计见 [架构文档](docs/ARCHITECTURE.md)，课程要求见
 [实验二文档](https://dbg-course.github.io/python-docs/oj/)。

@@ -322,11 +322,11 @@ def build() -> None:
         PageBreak(),
         p("6.1 页面验收", "H2"),
         p(
-            "前端截图由 Playwright 在真实运行的 FastAPI 与 Streamlit 服务上自动采集。登录页同时"
-            "提供注册入口；登录后根据服务端角色显示用户、管理员与 AI 功能，所有成功和失败结果"
-            "均以页面消息反馈。截图证明前端可以独立启动并通过 Cookie Session 调用后端接口。"
+            "前端截图由 Playwright 在真实运行的 FastAPI 与 Streamlit 服务上自动采集。角色化首页"
+            "显示等级、完成题数、AI 出题数与三层功能入口；管理员登录后用户管理入口自动解锁。"
+            "截图证明前端可以独立启动并通过 Cookie Session 调用后端接口。"
         ),
-        *screenshot("01-login.png", "图 5  Async OJ 登录与注册入口"),
+        *screenshot("00-dashboard-admin.png", "图 5  等级、资源统计与角色化功能入口"),
         PageBreak(),
         p("7. AI 使用说明", "H1"),
         p(

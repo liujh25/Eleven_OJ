@@ -13,7 +13,7 @@ from tests.fake_provider import PROBLEM
 
 
 async def test_ai_progress_usage_and_result(api, monkeypatch):
-    await login(api, "admin", "admintestpassword")
+    admin = await login(api, "admin", "admintestpassword")
     configured = await api.put(
         "/api/ai/model-config",
         json={
@@ -52,6 +52,8 @@ async def test_ai_progress_usage_and_result(api, monkeypatch):
         "cost": 0.56,
         "currency": "USD",
     }
+    profile = (await api.get(f"/api/users/{admin['user_id']}")).json()["data"]
+    assert profile["ai_problem_count"] == 1
 
 
 async def test_ai_cancel_really_stops_task(api, monkeypatch):
@@ -98,4 +100,7 @@ def test_streamlit_app_smoke():
     app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
     app.run(timeout=20)
     assert not app.exception
-    assert app.header[0].value == "账户"
+    labels = {button.label for button in app.button}
+    assert any("习题与评测" in label for label in labels)
+    assert any("登录 / 注册" in label for label in labels)
+    assert any("AI 智能命题" in label for label in labels)

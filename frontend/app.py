@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 import time
+from html import escape
+from pathlib import Path
 
 import streamlit as st
 
@@ -13,7 +16,14 @@ except ModuleNotFoundError as exc:
     # Streamlit may prepend the script directory instead of the project root.
     from client import APIError, OJClient
 
-st.set_page_config(page_title="Async OJ", page_icon="⚡", layout="wide")
+ASSET_ROOT = Path(__file__).parent / "assets"
+
+st.set_page_config(
+    page_title="Async OJ",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 st.markdown(
     """
     <style>
@@ -30,6 +40,19 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+@st.cache_data(show_spinner=False)
+def character_data_uri() -> str:
+    path = ASSET_ROOT / "home_character.png"
+    if not path.exists():
+        return ""
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def set_page(page: str) -> None:
+    st.session_state.nav_page = page
 
 
 def client() -> OJClient:
@@ -58,6 +81,171 @@ def hero() -> None:
         '<div class="hero"><h1>⚡ Async OJ</h1><p>异步评测 · 细粒度权限 · AI 辅助命题</p></div>',
         unsafe_allow_html=True,
     )
+
+
+def dashboard_page() -> None:
+    current = st.session_state.get("user")
+    profile = {
+        "username": "访客",
+        "role": "guest",
+        "resolve_count": 0,
+        "ai_problem_count": 0,
+        "level": 1,
+    }
+    if current:
+        try:
+            profile = client().get(f"/api/users/{current['user_id']}")
+        except Exception as exc:
+            show_error(exc)
+            profile.update(current)
+    image_uri = character_data_uri()
+    background = f"url('{image_uri}')" if image_uri else "none"
+    st.markdown(
+        f"""
+        <style>
+        .block-container {{max-width:1500px;padding-top:1.1rem;padding-bottom:1rem}}
+        .stApp {{
+          background:
+            radial-gradient(circle at 72% 12%,rgba(37,99,235,.2),transparent 28%),
+            linear-gradient(115deg,#05080d 0%,#111923 58%,#dfe4e8 58.1%,#f8fafc 100%);
+        }}
+        .operator-visual {{
+          min-height:760px;position:relative;overflow:hidden;
+          background-image:linear-gradient(180deg,transparent 60%,rgba(4,8,13,.96)),{background};
+          background-size:contain;background-repeat:no-repeat;background-position:center bottom;
+          border:1px solid rgba(148,163,184,.2);box-shadow:0 22px 70px rgba(0,0,0,.42);
+          clip-path:polygon(0 0,94% 0,100% 8%,100% 100%,7% 100%,0 92%);
+        }}
+        .operator-code {{
+          position:absolute;top:24px;left:28px;color:#dbeafe;letter-spacing:.2em;
+          font:700 13px/1.4 'Segoe UI',sans-serif;border-left:4px solid #f97316;
+          padding-left:12px;text-shadow:0 2px 8px #000;
+        }}
+        .level-ring {{
+          position:absolute;left:34px;bottom:82px;width:132px;height:132px;border-radius:50%;
+          border:4px solid #f8fafc;box-shadow:0 0 0 7px rgba(37,99,235,.72),0 8px 30px #000;
+          display:flex;flex-direction:column;align-items:center;justify-content:center;
+          color:white;background:rgba(4,8,13,.78);backdrop-filter:blur(8px);
+        }}
+        .level-ring strong {{font:800 54px/1 'Segoe UI',sans-serif}}
+        .level-ring span {{font:700 15px/1.5 'Segoe UI',sans-serif;letter-spacing:.16em}}
+        .operator-name {{
+          position:absolute;left:190px;bottom:93px;color:white;
+          font:800 30px/1.1 'Segoe UI',sans-serif;
+          text-shadow:0 3px 12px #000;border-bottom:3px solid #f97316;padding:0 30px 10px 0;
+        }}
+        .operator-name small {{display:block;font-size:12px;letter-spacing:.18em;color:#94a3b8}}
+        .command-header {{
+          padding:20px 24px;margin-bottom:12px;border-top:5px solid #f97316;
+          background:rgba(255,255,255,.9);box-shadow:0 12px 32px rgba(15,23,42,.16);
+          clip-path:polygon(0 0,97% 0,100% 25%,100% 100%,0 100%);
+        }}
+        .command-header h1 {{margin:0;color:#111827;font:900 36px/1.1 'Segoe UI',sans-serif}}
+        .command-header p {{margin:.4rem 0 0;color:#64748b;letter-spacing:.16em;font-weight:700}}
+        .resource-strip {{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 20px}}
+        .resource-item {{
+          padding:14px 18px;background:rgba(12,20,30,.9);color:white;border-left:5px solid #2563eb;
+          box-shadow:0 8px 24px rgba(15,23,42,.18);
+        }}
+        .resource-item:nth-child(2) {{border-left-color:#f97316}}
+        .resource-item strong {{font:800 32px/1 'Segoe UI',sans-serif;margin-right:10px}}
+        .resource-item span {{color:#cbd5e1;font-size:13px}}
+        .menu-index {{
+          color:#475569;font:800 12px/1 'Segoe UI',sans-serif;letter-spacing:.16em;
+          margin:.75rem 0 .3rem;border-left:4px solid #2563eb;padding-left:9px;
+        }}
+        div[data-testid="stButton"] > button {{
+          min-height:74px;justify-content:flex-start;padding:0 24px;border:0;border-radius:2px;
+          background:rgba(255,255,255,.94);color:#111827;font-size:1.25rem;font-weight:850;
+          border-left:8px solid #f97316;box-shadow:0 10px 25px rgba(15,23,42,.17);
+          transition:transform .16s ease,box-shadow .16s ease,background .16s ease;
+        }}
+        div[data-testid="stButton"] > button:hover {{
+          color:#0f172a;background:white;transform:translateX(-6px);
+          box-shadow:0 14px 30px rgba(15,23,42,.24);border-left-color:#2563eb;
+        }}
+        div[data-testid="stButton"] > button:disabled {{
+          color:#94a3b8;background:rgba(226,232,240,.84);border-left-color:#94a3b8;
+        }}
+        .level-rule {{color:#94a3b8;font-size:12px;margin-top:10px;text-align:center}}
+        @media (max-width:900px) {{
+          .stApp {{background:#0b1119}}
+          .operator-visual {{min-height:520px}}
+          .command-header {{margin-top:14px}}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    visual_column, command_column = st.columns([1.18, 1], gap="large")
+    with visual_column:
+        st.markdown(
+            f"""
+            <div class="operator-visual">
+              <div class="operator-code">ASYNC OJ // OPERATOR PROFILE</div>
+              <div class="level-ring"><strong>{int(profile["level"])}</strong><span>LV</span></div>
+              <div class="operator-name">{escape(str(profile["username"]))}
+                <small>{escape(str(profile["role"]).upper())} // CODER</small>
+              </div>
+            </div>
+            <div class="level-rule">难度升级规则：简单 +1 · 中等 +2 · 困难 +3</div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with command_column:
+        st.markdown(
+            f"""
+            <div class="command-header">
+              <h1>作战终端</h1><p>ONLINE JUDGE CONTROL DECK</p>
+            </div>
+            <div class="resource-strip">
+              <div class="resource-item"><strong>{int(profile["resolve_count"])}</strong>
+                <span>已完成题目</span></div>
+              <div class="resource-item"><strong>{int(profile["ai_problem_count"])}</strong>
+                <span>AI 出题总数</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('<div class="menu-index">01 / EXERCISE & JUDGE</div>', unsafe_allow_html=True)
+        st.button(
+            "▰ 习题与评测　进入做题工作区  ›",
+            key="home-workspace",
+            width="stretch",
+            on_click=set_page,
+            args=("题目与评测",),
+        )
+        account_column, admin_column = st.columns(2)
+        with account_column:
+            st.markdown('<div class="menu-index">02 / PROFILE</div>', unsafe_allow_html=True)
+            target = "个人信息" if current else "账户"
+            label = "◈ 个人信息  ›" if current else "◈ 登录 / 注册  ›"
+            st.button(
+                label,
+                key="home-account",
+                width="stretch",
+                on_click=set_page,
+                args=(target,),
+            )
+        with admin_column:
+            st.markdown('<div class="menu-index">ADMIN / USERS</div>', unsafe_allow_html=True)
+            is_admin = bool(current and current["role"] == "admin")
+            st.button(
+                "⬡ 用户管理  ›" if is_admin else "⬡ 用户管理（锁定）",
+                key="home-admin",
+                width="stretch",
+                disabled=not is_admin,
+                on_click=set_page if is_admin else None,
+                args=("用户管理",) if is_admin else None,
+            )
+        st.markdown('<div class="menu-index">03 / AI AUTHORING</div>', unsafe_allow_html=True)
+        st.button(
+            "✦ AI 智能命题　生成、复核与导入  ›",
+            key="home-ai",
+            width="stretch",
+            on_click=set_page,
+            args=("AI 智能命题",),
+        )
 
 
 def auth_page() -> None:
@@ -107,11 +295,13 @@ def profile_page() -> None:
     st.header("个人信息")
     try:
         data = client().get(f"/api/users/{user['user_id']}")
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
         c1.metric("用户名", data["username"])
-        c2.metric("角色", data["role"])
-        c3.metric("提交次数", data["submit_count"])
-        c4.metric("通过题数", data["resolve_count"])
+        c2.metric("等级", f"LV {data['level']}")
+        c3.metric("角色", data["role"])
+        c4.metric("提交次数", data["submit_count"])
+        c5.metric("完成题目", data["resolve_count"])
+        c6.metric("AI 出题", data["ai_problem_count"])
         st.caption(f"加入时间：{data['join_time']} · 用户 ID：{data['user_id']}")
     except Exception as exc:
         show_error(exc)
@@ -512,16 +702,20 @@ def ai_page() -> None:
             show_error(exc)
 
 
-hero()
 current = st.session_state.get("user")
 st.sidebar.caption(
     f"已登录：{current['username']} ({current['role']})" if current else "当前未登录"
 )
-pages = ["账户", "个人信息", "题目与评测", "AI 智能命题"]
+pages = ["首页", "账户", "个人信息", "题目与评测", "AI 智能命题"]
 if current and current["role"] == "admin":
     pages.append("用户管理")
-page = st.sidebar.radio("导航", pages)
+if st.session_state.get("nav_page") not in pages:
+    st.session_state.nav_page = "首页"
+page = st.sidebar.radio("导航", pages, key="nav_page")
+if page != "首页":
+    hero()
 {
+    "首页": dashboard_page,
     "账户": auth_page,
     "个人信息": profile_page,
     "题目与评测": workspace_page,

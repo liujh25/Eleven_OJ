@@ -5,7 +5,15 @@ from sqlalchemy import select
 from oj.db import SessionFactory
 from oj.judge_tasks import run_submission
 from oj.models import Submission, TestCaseResult, User
+from oj.routers.users import difficulty_level_gain
 from tests.conftest import login, problem_body
+
+
+def test_difficulty_level_gain():
+    assert difficulty_level_gain("简单") == 1
+    assert difficulty_level_gain("medium") == 2
+    assert difficulty_level_gain("困难") == 3
+    assert difficulty_level_gain("") == 1
 
 
 async def test_user_auth_and_permissions(api):
@@ -123,7 +131,7 @@ async def test_submission_queries_rejudge_and_rate_limit(api):
 
 
 async def test_submission_worker_persists_results(api):
-    await login(api, "admin", "admintestpassword")
+    admin = await login(api, "admin", "admintestpassword")
     await api.post("/api/problems/", json=problem_body())
     created = await api.post(
         "/api/submissions/",
@@ -140,6 +148,10 @@ async def test_submission_worker_persists_results(api):
     assert detail["score"] == detail["counts"] == 20
     log = (await api.get(f"/api/submissions/{submission_id}/log")).json()["data"]
     assert [item["result"] for item in log["details"]] == ["AC", "AC"]
+    profile = (await api.get(f"/api/users/{admin['user_id']}")).json()["data"]
+    assert profile["resolve_count"] == 1
+    assert profile["level"] == 2
+    assert profile["level_gain"] == 1
 
 
 async def test_logs_visibility_and_access_audit(api):
