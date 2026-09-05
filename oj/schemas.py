@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -92,6 +93,47 @@ class AIConfigBody(StrictModel):
         return value.rstrip("/")
 
 
+TestStrategy = Literal[
+    "basic",
+    "boundary",
+    "performance",
+    "corner",
+    "overflow",
+    "adversarial",
+    "randomized",
+]
+
+
+def default_test_strategies() -> list[TestStrategy]:
+    return ["basic", "boundary", "corner"]
+
+
+class AITestPlan(StrictModel):
+    strategies: list[TestStrategy] = Field(
+        default_factory=default_test_strategies, min_length=1, max_length=7
+    )
+    target_count: int = Field(default=10, ge=1, le=50)
+    preserve_existing: bool = True
+    custom_requirements: str = Field(default="", max_length=3000)
+
+    @field_validator("strategies")
+    @classmethod
+    def unique_strategies(cls, strategies: list[TestStrategy]) -> list[TestStrategy]:
+        if len(strategies) != len(set(strategies)):
+            raise ValueError("test strategies must be unique")
+        return strategies
+
+
 class AITaskBody(StrictModel):
     requirement: str = Field(min_length=10, max_length=10_000)
     problem_id: str | None = Field(default=None, max_length=80)
+    test_plan: AITestPlan = Field(default_factory=AITestPlan)
+
+
+class AIIterationBody(StrictModel):
+    feedback: str = Field(min_length=3, max_length=5000)
+    test_plan: AITestPlan | None = None
+
+
+class AITestRefinementBody(StrictModel):
+    test_plan: AITestPlan

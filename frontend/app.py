@@ -678,10 +678,60 @@ def workspace_page() -> None:
             problem_management(all_problems)
 
 
+AI_TEST_STRATEGIES = {
+    "basic": "简单测试｜典型输入与样例附近数据",
+    "boundary": "边界条件｜最小值、最大值与临界转折",
+    "performance": "性能限制｜卡掉未优化的低效算法",
+    "corner": "特殊情形｜空、单元素、重复与退化结构",
+    "overflow": "数值溢出｜32 位整数与中间结果风险",
+    "adversarial": "易错对抗｜常见错误算法的反例",
+    "randomized": "多样数据｜不同分布与组合形态",
+}
+
+
+def test_plan_fields(prefix: str, *, detailed: bool = False) -> dict:
+    defaults = ["basic", "boundary", "corner"]
+    if detailed:
+        defaults.extend(["performance", "adversarial"])
+    strategies = st.multiselect(
+        "测试点类型",
+        list(AI_TEST_STRATEGIES),
+        default=defaults,
+        format_func=lambda value: AI_TEST_STRATEGIES[value],
+        key=f"{prefix}-strategies",
+        help="可以同时选择多种策略；AI 会为每种策略说明覆盖目的。",
+    )
+    c1, c2 = st.columns([1, 2])
+    target_count = c1.number_input(
+        "目标测试点数量",
+        min_value=1,
+        max_value=50,
+        value=12 if detailed else 10,
+        key=f"{prefix}-count",
+    )
+    preserve_existing = c2.checkbox(
+        "保留并复核已有有效测试点", value=True, key=f"{prefix}-preserve"
+    )
+    custom_requirements = st.text_area(
+        "测试点补充要求（可选）",
+        placeholder="例如：重点检查重复边、负权值；性能点应区分 O(n log n) 与 O(n²)。",
+        height=90,
+        key=f"{prefix}-custom",
+    )
+    return {
+        "strategies": strategies,
+        "target_count": int(target_count),
+        "preserve_existing": preserve_existing,
+        "custom_requirements": custom_requirements,
+    }
+
+
 def ai_page() -> None:
     if not require_login():
         return
-    config_tab, author_tab, history_tab = st.tabs(["模型配置", "智能命题", "任务记录"])
+    config_tab, author_tab, iterate_tab, tests_tab, task_tab, history_tab = st.tabs(
+        ["模型配置", "智能命题", "迭代改进", "精细测试点", "任务控制台", "版本记录"]
+    )
     with config_tab:
         st.info("模型密钥加密保存在后端，不会在查询、日志或页面中回显。")
         with st.form("ai-config"):
@@ -723,22 +773,102 @@ def ai_page() -> None:
                 "参考或修改已有题目（可选）",
                 [""] + [item["id"] for item in problems],
             )
+            with st.expander("初始测试点策略", expanded=False):
+                test_plan = test_plan_fields("author-plan")
             if st.form_submit_button("开始命题", type="primary"):
                 try:
                     data = client().post(
                         "/api/ai/problem-tasks/",
-                        json={"requirement": requirement, "problem_id": reference or None},
+                        json={
+                            "requirement": requirement,
+                            "problem_id": reference or None,
+                            "test_plan": test_plan,
+                        },
                     )
                     st.session_state.ai_task_id = data["task_id"]
-                    st.success(f"任务已创建：{data['task_id']}")
+                    st.success(f"初始版本已创建：{data['task_id']}。请到“任务控制台”查看进度。")
                 except Exception as exc:
                     show_error(exc)
-        task_id = st.text_input("当前任务 ID", value=st.session_state.get("ai_task_id", ""))
+    with iterate_tab:
+        st.markdown("### 根据反馈继续迭代")
+        st.info("上一版结果会由后端直接加入模型上下文；新版本作为子任务保存，不会覆盖旧版本。")
+        with st.form("ai-iteration"):
+            source_task = st.text_input(
+                "作为基线的已完成任务 ID",
+                value=st.session_state.get("ai_task_id", ""),
+                key="iteration-source",
+            )
+            feedback = st.text_area(
+                "改进意见",
+                placeholder=(
+                    "例如：题面过于抽象，请加入实际场景；保持输入格式不变，把难度提高到中等，"
+                    "并增加能卡掉错误贪心的反例。"
+                ),
+                height=170,
+            )
+            if st.form_submit_button("生成改进版本", type="primary"):
+                try:
+                    data = client().post(
+                        f"/api/ai/problem-tasks/{source_task}/iterations",
+                        json={"feedback": feedback},
+                    )
+                    st.session_state.ai_task_id = data["task_id"]
+                    st.success(
+                        f"迭代任务已创建：{data['task_id']}，父版本：{data['parent_task_id']}。"
+                    )
+                except Exception as exc:
+                    show_error(exc)
+        if st.session_state.get("ai_result"):
+            with st.expander("当前已加载版本（供填写意见时参考）"):
+                st.json(st.session_state.ai_result)
+    with tests_tab:
+        st.markdown("### 精细化测试点设计")
+        st.info(
+            "选择需要的测试类型。性能限制测试会要求 AI 生成约束上界内的确定数据，"
+            "并注明希望淘汰的低效算法复杂度。"
+        )
+        with st.form("ai-test-refinement"):
+            source_task = st.text_input(
+                "需要增强的已完成任务 ID",
+                value=st.session_state.get("ai_task_id", ""),
+                key="test-source",
+            )
+            test_plan = test_plan_fields("refine-plan", detailed=True)
+            if st.form_submit_button("生成增强测试点版本", type="primary"):
+                try:
+                    data = client().post(
+                        f"/api/ai/problem-tasks/{source_task}/test-refinements",
+                        json={"test_plan": test_plan},
+                    )
+                    st.session_state.ai_task_id = data["task_id"]
+                    st.success(
+                        f"测试点增强任务已创建：{data['task_id']}，父版本：{data['parent_task_id']}。"
+                    )
+                except Exception as exc:
+                    show_error(exc)
+        st.caption(
+            "提示：AI 生成的输出仍应在导入前由出题者审阅；性能点最好再用参考解和低效解进行对拍。"
+        )
+    with task_tab:
+        st.markdown("### 当前任务与结果")
+        task_id = st.text_input(
+            "当前任务 ID", value=st.session_state.get("ai_task_id", ""), key="task-console-id"
+        )
         c1, c2 = st.columns(2)
         if c1.button("刷新进度", disabled=not task_id):
             try:
                 task = client().get(f"/api/ai/problem-tasks/{task_id}")
-                st.write(f"**{task['status']}** · {task['progress']}")
+                task_names = {
+                    "authoring": "初始命题",
+                    "iteration": "迭代改进",
+                    "test_refinement": "测试点增强",
+                }
+                st.write(
+                    f"**{task_names.get(task['task_type'], task['task_type'])} · "
+                    f"第 {task['iteration_number']} 版 · {task['status']}** · {task['progress']}"
+                )
+                if task.get("parent_task_id"):
+                    st.caption(f"父任务：{task['parent_task_id']}")
                 u1, u2, u3 = st.columns(3)
                 u1.metric("输入 Token", task["usage"]["input_tokens"])
                 u2.metric("输出 Token", task["usage"]["output_tokens"])
@@ -748,6 +878,7 @@ def ai_page() -> None:
                 if task.get("result"):
                     st.json(task["result"])
                     st.session_state.ai_result = task["result"]
+                    st.session_state.ai_task_id = task_id
             except Exception as exc:
                 show_error(exc)
         if c2.button("中断任务", disabled=not task_id):
@@ -765,6 +896,9 @@ def ai_page() -> None:
             rows = [
                 {
                     "task_id": item["task_id"],
+                    "类型": item["task_type"],
+                    "版本": item["iteration_number"],
+                    "父任务": item["parent_task_id"] or "-",
                     "status": item["status"],
                     "progress": item["progress"],
                     "tokens": item["usage"]["total_tokens"],

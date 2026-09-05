@@ -22,7 +22,7 @@ async def lifespan(_: FastAPI):
     await close_database()
 
 
-app = FastAPI(title="Async OJ", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Async OJ", version="1.1.0", lifespan=lifespan)
 app.include_router(users.router)
 app.include_router(problems.router)
 app.include_router(languages.router)

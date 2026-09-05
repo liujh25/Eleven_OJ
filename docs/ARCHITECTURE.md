@@ -24,7 +24,7 @@ SQLite 保存用户、服务端 Session、题目、语言、提交、测试点�
 - `/api/submissions/`：提交、按用户/题目/状态筛选；详情和 `/rejudge`。
 - `/api/users/`、`/api/auth/*`：注册、用户、角色与 Session 生命周期。
 - `/api/submissions/{id}/log`、`/api/logs/access/`：测试点结果与访问审计。
-- `/api/ai/model-config`、`/api/ai/problem-tasks/*`：模型配置与命题任务。
+- `/api/ai/model-config`、`/api/ai/problem-tasks/*`：模型配置、命题任务、版本迭代与测试点增强。
 - `/api/reset/`：自动测试恢复初始管理员、Python 和 C++ 配置。
 
 异常按认证、封禁/权限、参数、频率、冲突、不存在和内部错误的顺序处理。FastAPI 的
@@ -60,6 +60,12 @@ SQLite 保存用户、服务端 Session、题目、语言、提交、测试点�
 常见错误和复杂度区分度。最终结果必须通过与题目新增接口相同的 Pydantic 模型校验。
 两次调用的输入/输出 Token 分别累加并按配置价格计费。取消会取消真实 asyncio 任务，
 而不是只停止前端动画。
+
+完成任务可以派生两类子任务。`POST /api/ai/problem-tasks/{id}/iterations` 将父版本完整结果
+和用户改进意见一同交给模型；`POST /api/ai/problem-tasks/{id}/test-refinements` 保持核心题意
+及输入输出协议稳定，按简单、边界、性能、特殊情形、溢出、易错对抗和多样数据等策略补强
+测试点。任务持久化 `parent_task_id`、`iteration_number`、`task_type` 和测试计划，形成可审计、
+可回退的版本链。启动时会对旧 SQLite 数据库执行仅新增字段的幂等迁移。
 
 ## 已知部署边界
 

@@ -176,8 +176,8 @@ def build() -> None:
                 ["项目", "内容"],
                 ["作者", "liujh25"],
                 ["邮箱", "liujh25@mails.tsinghua.edu.cn"],
-                ["完成日期", "2026 年 9 月 4 日"],
-                ["版本", "1.0.0"],
+                ["完成日期", "2026 年 9 月 5 日"],
+                ["版本", "1.1.0"],
             ],
             [4 * cm, 9 * cm],
         ),
@@ -278,6 +278,13 @@ def build() -> None:
         ),
         *screenshot("04-ai-authoring.png", "图 4  AI 模型配置、命题任务与 Token/费用页面"),
         p(
+            "完成后的题目可以继续派生迭代版本：用户填写改进意见，系统把父版本完整结果与意见再次"
+            "交给模型，并保留父任务和轮次。精细测试点界面支持组合简单、边界、性能、特殊情形、"
+            "溢出、易错对抗与多样数据策略；性能点要求给出确定输入输出并注明要淘汰的低效复杂度。"
+        ),
+        *screenshot("06-ai-iteration.png", "图 5  基于已完成题目的自然语言迭代改进"),
+        *screenshot("07-ai-test-design.png", "图 6  可组合的精细化测试点策略"),
+        p(
             "系统分别累计输入和输出 Token，并按照用户配置的计价单位与单价计算美元费用。取消接口"
             "会调用 Task.cancel()，后台捕获 CancelledError 后把任务持久化为 cancelled，"
             "满足真实中断要求。"
@@ -304,15 +311,15 @@ def build() -> None:
         ),
         p("6. 测试与成果展示", "H1"),
         p(
-            "自动测试共 17 项，覆盖用户与角色、认证优先级、题目 CRUD、语言命令校验、提交限流、"
+            "自动测试共 20 项，覆盖用户与角色、认证优先级、题目 CRUD、语言命令校验、提交限流、"
             "筛选和重评、Python 的 AC/WA/RE/TLE、C++ CE、测试日志公开与审计、系统重置、AI 进度/"
-            "取消/费用和 Streamlit 冒烟。当前本机全部通过，后端语句覆盖率为 84%。"
+            "取消/费用和 Streamlit 冒烟。当前本机全部通过，后端语句覆盖率为 85%。"
         ),
         table(
             [
                 ["检查", "结果"],
-                ["pytest", "17 passed"],
-                ["Coverage", "84%（门槛 80%）"],
+                ["pytest", "20 passed"],
+                ["Coverage", "85%（门槛 80%）"],
                 ["Ruff", "All checks passed"],
                 ["mypy", "Success: no issues"],
                 ["CI", "Ubuntu + Python 3.10/3.12 + GCC"],
@@ -326,7 +333,7 @@ def build() -> None:
             "显示等级、完成题数、AI 出题数与三层功能入口；管理员登录后用户管理入口自动解锁。"
             "截图证明前端可以独立启动并通过 Cookie Session 调用后端接口。"
         ),
-        *screenshot("00-dashboard-admin.png", "图 5  等级、资源统计与角色化功能入口"),
+        *screenshot("00-dashboard-admin.png", "图 7  等级、资源统计与角色化功能入口"),
         PageBreak(),
         p("7. AI 使用说明", "H1"),
         p(

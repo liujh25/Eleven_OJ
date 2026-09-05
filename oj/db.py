@@ -1,5 +1,7 @@
 from collections.abc import AsyncIterator
 
+from sqlalchemy import inspect
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from oj.config import get_settings
@@ -16,10 +18,29 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+def _migrate_existing_database(connection: Connection) -> None:
+    """Apply additive migrations required by databases created by earlier versions."""
+    columns = {column["name"] for column in inspect(connection).get_columns("ai_tasks")}
+    additions = {
+        "task_type": "VARCHAR(32) NOT NULL DEFAULT 'authoring'",
+        "parent_task_id": "VARCHAR(32)",
+        "feedback": "TEXT",
+        "test_plan": "JSON",
+        "iteration_number": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            connection.exec_driver_sql(f"ALTER TABLE ai_tasks ADD COLUMN {name} {definition}")
+    connection.exec_driver_sql(
+        "CREATE INDEX IF NOT EXISTS ix_ai_tasks_parent_task_id ON ai_tasks (parent_task_id)"
+    )
+
+
 async def initialize_database() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(_migrate_existing_database)
     async with SessionFactory() as session:
         if await session.get(User, "admin") is None:
             session.add(

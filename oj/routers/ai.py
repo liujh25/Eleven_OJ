@@ -10,7 +10,7 @@ from oj.crypto import encrypt_secret
 from oj.db import get_db
 from oj.dependencies import current_user
 from oj.models import AIConfig, AITask, Problem, User
-from oj.schemas import AIConfigBody, AITaskBody
+from oj.schemas import AIConfigBody, AIIterationBody, AITaskBody, AITestRefinementBody
 
 router = APIRouter(prefix="/api/ai", tags=["ai-authoring"])
 
@@ -18,6 +18,12 @@ router = APIRouter(prefix="/api/ai", tags=["ai-authoring"])
 def task_data(task: AITask) -> dict:
     return {
         "task_id": task.id,
+        "task_type": task.task_type,
+        "parent_task_id": task.parent_task_id,
+        "iteration_number": task.iteration_number,
+        "requirement": task.requirement,
+        "feedback": task.feedback,
+        "test_plan": task.test_plan,
         "status": task.status,
         "progress": task.progress,
         "result": task.result,
@@ -35,6 +41,44 @@ def task_data(task: AITask) -> dict:
 def check_owner(task: AITask, user: User) -> None:
     if task.user_id != user.id and user.role != "admin":
         fail(403, "permission denied")
+
+
+async def completed_source(task_id: str, user: User, db: AsyncSession) -> AITask:
+    task = await db.get(AITask, task_id)
+    if task is None:
+        fail(404, "source task not found")
+    check_owner(task, user)
+    if task.status != "completed" or not task.result:
+        fail(409, "source task must be completed")
+    return task
+
+
+async def create_child_task(
+    source: AITask,
+    user: User,
+    db: AsyncSession,
+    *,
+    task_type: str,
+    feedback: str | None,
+    test_plan: dict | None,
+) -> AITask:
+    if await db.get(AIConfig, user.id) is None:
+        fail(400, "model configuration is required")
+    task = AITask(
+        user_id=user.id,
+        requirement=source.requirement,
+        problem_id=source.problem_id,
+        task_type=task_type,
+        parent_task_id=source.id,
+        feedback=feedback,
+        test_plan=test_plan,
+        iteration_number=source.iteration_number + 1,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    schedule_ai_task(task.id)
+    return task
 
 
 @router.put("/model-config")
@@ -80,12 +124,61 @@ async def create_task(
         fail(400, "model configuration is required")
     if body.problem_id and await db.get(Problem, body.problem_id) is None:
         fail(404, "problem not found")
-    task = AITask(user_id=user.id, requirement=body.requirement, problem_id=body.problem_id)
+    task = AITask(
+        user_id=user.id,
+        requirement=body.requirement,
+        problem_id=body.problem_id,
+        test_plan=body.test_plan.model_dump(),
+    )
     db.add(task)
     await db.commit()
     await db.refresh(task)
     schedule_ai_task(task.id)
     return envelope({"task_id": task.id, "status": "pending"}, "task created")
+
+
+@router.post("/problem-tasks/{task_id}/iterations")
+async def iterate_task(
+    task_id: str,
+    body: AIIterationBody,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    source = await completed_source(task_id, user, db)
+    task = await create_child_task(
+        source,
+        user,
+        db,
+        task_type="iteration",
+        feedback=body.feedback,
+        test_plan=body.test_plan.model_dump() if body.test_plan else source.test_plan,
+    )
+    return envelope(
+        {"task_id": task.id, "status": task.status, "parent_task_id": source.id},
+        "iteration task created",
+    )
+
+
+@router.post("/problem-tasks/{task_id}/test-refinements")
+async def refine_testcases(
+    task_id: str,
+    body: AITestRefinementBody,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    source = await completed_source(task_id, user, db)
+    task = await create_child_task(
+        source,
+        user,
+        db,
+        task_type="test_refinement",
+        feedback="依据精细化测试策略补强测试点，同时保持题意和输入输出协议稳定。",
+        test_plan=body.test_plan.model_dump(),
+    )
+    return envelope(
+        {"task_id": task.id, "status": task.status, "parent_task_id": source.id},
+        "test refinement task created",
+    )
 
 
 @router.get("/problem-tasks/")
