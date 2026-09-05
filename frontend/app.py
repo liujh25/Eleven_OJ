@@ -679,37 +679,48 @@ def workspace_page() -> None:
 
 
 AI_TEST_STRATEGIES = {
-    "basic": "简单测试｜典型输入与样例附近数据",
-    "boundary": "边界条件｜最小值、最大值与临界转折",
-    "performance": "性能限制｜卡掉未优化的低效算法",
-    "corner": "特殊情形｜空、单元素、重复与退化结构",
-    "overflow": "数值溢出｜32 位整数与中间结果风险",
-    "adversarial": "易错对抗｜常见错误算法的反例",
-    "randomized": "多样数据｜不同分布与组合形态",
+    "basic": ("简单测试点", "样例附近的小规模输入，用于发现基础实现错误"),
+    "normal": ("普通测试点", "约束中段的典型数据，用于检验完整算法逻辑"),
+    "boundary": ("边界条件测试点", "最小值、最大值、空数据与临界转折"),
+    "performance": ("时间限制测试点", "约束上界数据，用于卡掉未优化的低效算法"),
+    "corner": ("特殊情形测试点", "单元素、重复、有序、逆序与退化结构"),
+    "overflow": ("数值溢出测试点", "32 位整数边界与中间结果溢出风险"),
+    "adversarial": ("易错对抗测试点", "针对常见错误算法构造最小反例"),
+    "randomized": ("多样数据测试点", "不同分布与组合形态，降低数据单一性"),
 }
 
 
-def test_plan_fields(prefix: str, *, detailed: bool = False) -> dict:
-    defaults = ["basic", "boundary", "corner"]
-    if detailed:
-        defaults.extend(["performance", "adversarial"])
-    strategies = st.multiselect(
-        "测试点类型",
-        list(AI_TEST_STRATEGIES),
-        default=defaults,
-        format_func=lambda value: AI_TEST_STRATEGIES[value],
-        key=f"{prefix}-strategies",
-        help="可以同时选择多种策略；AI 会为每种策略说明覆盖目的。",
-    )
-    c1, c2 = st.columns([1, 2])
-    target_count = c1.number_input(
-        "目标测试点数量",
-        min_value=1,
-        max_value=50,
-        value=12 if detailed else 10,
-        key=f"{prefix}-count",
-    )
-    preserve_existing = c2.checkbox(
+def test_plan_fields(prefix: str) -> dict:
+    defaults = {
+        "basic": 2,
+        "normal": 3,
+        "boundary": 2,
+        "performance": 1,
+        "corner": 1,
+        "overflow": 0,
+        "adversarial": 1,
+        "randomized": 0,
+    }
+    st.markdown("#### 测试点配额")
+    st.caption("逐项设置生成数量；数量为 0 表示本轮不生成该类型，所有类型合计最多 50 个。")
+    case_counts: dict[str, int] = {}
+    for strategy, (name, description) in AI_TEST_STRATEGIES.items():
+        label_column, count_column = st.columns([5, 1], vertical_alignment="center")
+        label_column.markdown(f"**{name}**  \n{description}")
+        count = count_column.number_input(
+            f"{name}数量",
+            min_value=0,
+            max_value=20,
+            value=defaults[strategy],
+            step=1,
+            key=f"{prefix}-{strategy}-count",
+            label_visibility="collapsed",
+        )
+        if count:
+            case_counts[strategy] = int(count)
+    total_count = sum(case_counts.values())
+    st.caption(f"当前合计：{total_count} / 50 个测试点")
+    preserve_existing = st.checkbox(
         "保留并复核已有有效测试点", value=True, key=f"{prefix}-preserve"
     )
     custom_requirements = st.text_area(
@@ -719,8 +730,9 @@ def test_plan_fields(prefix: str, *, detailed: bool = False) -> dict:
         key=f"{prefix}-custom",
     )
     return {
-        "strategies": strategies,
-        "target_count": int(target_count),
+        "strategies": list(case_counts),
+        "target_count": total_count,
+        "case_counts": case_counts,
         "preserve_existing": preserve_existing,
         "custom_requirements": custom_requirements,
     }
@@ -729,8 +741,8 @@ def test_plan_fields(prefix: str, *, detailed: bool = False) -> dict:
 def ai_page() -> None:
     if not require_login():
         return
-    config_tab, author_tab, iterate_tab, tests_tab, task_tab, history_tab = st.tabs(
-        ["模型配置", "智能命题", "迭代改进", "精细测试点", "任务控制台", "版本记录"]
+    config_tab, author_tab, iterate_tab, task_tab, history_tab = st.tabs(
+        ["模型配置", "智能命题", "迭代改进", "任务控制台", "版本记录"]
     )
     with config_tab:
         st.info("模型密钥加密保存在后端，不会在查询、日志或页面中回显。")
@@ -773,22 +785,26 @@ def ai_page() -> None:
                 "参考或修改已有题目（可选）",
                 [""] + [item["id"] for item in problems],
             )
-            with st.expander("初始测试点策略", expanded=False):
-                test_plan = test_plan_fields("author-plan")
+            test_plan = test_plan_fields("author-plan")
             if st.form_submit_button("开始命题", type="primary"):
-                try:
-                    data = client().post(
-                        "/api/ai/problem-tasks/",
-                        json={
-                            "requirement": requirement,
-                            "problem_id": reference or None,
-                            "test_plan": test_plan,
-                        },
-                    )
-                    st.session_state.ai_task_id = data["task_id"]
-                    st.success(f"初始版本已创建：{data['task_id']}。请到“任务控制台”查看进度。")
-                except Exception as exc:
-                    show_error(exc)
+                if not test_plan["case_counts"]:
+                    st.warning("请至少为一种测试点设置数量。")
+                elif test_plan["target_count"] > 50:
+                    st.warning("所有类型合计不能超过 50 个测试点。")
+                else:
+                    try:
+                        data = client().post(
+                            "/api/ai/problem-tasks/",
+                            json={
+                                "requirement": requirement,
+                                "problem_id": reference or None,
+                                "test_plan": test_plan,
+                            },
+                        )
+                        st.session_state.ai_task_id = data["task_id"]
+                        st.success(f"初始版本已创建：{data['task_id']}。请到“任务控制台”查看进度。")
+                    except Exception as exc:
+                        show_error(exc)
     with iterate_tab:
         st.markdown("### 根据反馈继续迭代")
         st.info("上一版结果会由后端直接加入模型上下文；新版本作为子任务保存，不会覆盖旧版本。")
@@ -806,49 +822,27 @@ def ai_page() -> None:
                 ),
                 height=170,
             )
+            test_plan = test_plan_fields("iteration-plan")
             if st.form_submit_button("生成改进版本", type="primary"):
-                try:
-                    data = client().post(
-                        f"/api/ai/problem-tasks/{source_task}/iterations",
-                        json={"feedback": feedback},
-                    )
-                    st.session_state.ai_task_id = data["task_id"]
-                    st.success(
-                        f"迭代任务已创建：{data['task_id']}，父版本：{data['parent_task_id']}。"
-                    )
-                except Exception as exc:
-                    show_error(exc)
+                if not test_plan["case_counts"]:
+                    st.warning("请至少为一种测试点设置数量。")
+                elif test_plan["target_count"] > 50:
+                    st.warning("所有类型合计不能超过 50 个测试点。")
+                else:
+                    try:
+                        data = client().post(
+                            f"/api/ai/problem-tasks/{source_task}/iterations",
+                            json={"feedback": feedback, "test_plan": test_plan},
+                        )
+                        st.session_state.ai_task_id = data["task_id"]
+                        st.success(
+                            f"迭代任务已创建：{data['task_id']}，父版本：{data['parent_task_id']}。"
+                        )
+                    except Exception as exc:
+                        show_error(exc)
         if st.session_state.get("ai_result"):
             with st.expander("当前已加载版本（供填写意见时参考）"):
                 st.json(st.session_state.ai_result)
-    with tests_tab:
-        st.markdown("### 精细化测试点设计")
-        st.info(
-            "选择需要的测试类型。性能限制测试会要求 AI 生成约束上界内的确定数据，"
-            "并注明希望淘汰的低效算法复杂度。"
-        )
-        with st.form("ai-test-refinement"):
-            source_task = st.text_input(
-                "需要增强的已完成任务 ID",
-                value=st.session_state.get("ai_task_id", ""),
-                key="test-source",
-            )
-            test_plan = test_plan_fields("refine-plan", detailed=True)
-            if st.form_submit_button("生成增强测试点版本", type="primary"):
-                try:
-                    data = client().post(
-                        f"/api/ai/problem-tasks/{source_task}/test-refinements",
-                        json={"test_plan": test_plan},
-                    )
-                    st.session_state.ai_task_id = data["task_id"]
-                    st.success(
-                        f"测试点增强任务已创建：{data['task_id']}，父版本：{data['parent_task_id']}。"
-                    )
-                except Exception as exc:
-                    show_error(exc)
-        st.caption(
-            "提示：AI 生成的输出仍应在导入前由出题者审阅；性能点最好再用参考解和低效解进行对拍。"
-        )
     with task_tab:
         st.markdown("### 当前任务与结果")
         task_id = st.text_input(

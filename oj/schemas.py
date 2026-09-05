@@ -95,6 +95,7 @@ class AIConfigBody(StrictModel):
 
 TestStrategy = Literal[
     "basic",
+    "normal",
     "boundary",
     "performance",
     "corner",
@@ -105,14 +106,15 @@ TestStrategy = Literal[
 
 
 def default_test_strategies() -> list[TestStrategy]:
-    return ["basic", "boundary", "corner"]
+    return ["basic", "normal", "boundary", "corner"]
 
 
 class AITestPlan(StrictModel):
     strategies: list[TestStrategy] = Field(
-        default_factory=default_test_strategies, min_length=1, max_length=7
+        default_factory=default_test_strategies, min_length=1, max_length=8
     )
     target_count: int = Field(default=10, ge=1, le=50)
+    case_counts: dict[TestStrategy, int] = Field(default_factory=dict)
     preserve_existing: bool = True
     custom_requirements: str = Field(default="", max_length=3000)
 
@@ -122,6 +124,15 @@ class AITestPlan(StrictModel):
         if len(strategies) != len(set(strategies)):
             raise ValueError("test strategies must be unique")
         return strategies
+
+    @field_validator("case_counts")
+    @classmethod
+    def valid_case_counts(cls, counts: dict[TestStrategy, int]) -> dict[TestStrategy, int]:
+        if any(count < 1 or count > 20 for count in counts.values()):
+            raise ValueError("each test strategy count must be between 1 and 20")
+        if sum(counts.values()) > 50:
+            raise ValueError("total test strategy count must not exceed 50")
+        return counts
 
 
 class AITaskBody(StrictModel):

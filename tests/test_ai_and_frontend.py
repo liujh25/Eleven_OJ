@@ -84,7 +84,16 @@ async def test_ai_iteration_and_precision_test_plan(api, monkeypatch):
 
     iteration = await api.post(
         f"/api/ai/problem-tasks/{original_id}/iterations",
-        json={"feedback": "保持输入格式不变，增加实际场景，并把难度调整为中等"},
+        json={
+            "feedback": "保持输入格式不变，增加实际场景，并把难度调整为中等",
+            "test_plan": {
+                "strategies": ["normal", "boundary", "performance"],
+                "target_count": 6,
+                "case_counts": {"normal": 3, "boundary": 2, "performance": 1},
+                "preserve_existing": True,
+                "custom_requirements": "普通点覆盖约束中段",
+            },
+        },
     )
     assert iteration.status_code == 200
     iteration_id = iteration.json()["data"]["task_id"]
@@ -93,6 +102,7 @@ async def test_ai_iteration_and_precision_test_plan(api, monkeypatch):
     assert iterated["task_type"] == "iteration"
     assert iterated["parent_task_id"] == original_id
     assert iterated["iteration_number"] == 1
+    assert iterated["test_plan"]["case_counts"]["normal"] == 3
     assert iterated["result"]["version"]["task_type"] == "iteration"
 
     refinement = await api.post(
@@ -115,6 +125,8 @@ async def test_ai_iteration_and_precision_test_plan(api, monkeypatch):
     assert refined["test_plan"]["target_count"] == 16
     combined_prompts = "\n".join(prompts)
     assert "增加实际场景" in combined_prompts
+    assert "普通测试" in combined_prompts
+    assert "生成 3 个" in combined_prompts
     assert "性能测试" in combined_prompts
     assert "O(n log n) 与 O(n²)" in combined_prompts
 

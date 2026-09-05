@@ -63,8 +63,9 @@ SQLite 保存用户、服务端 Session、题目、语言、提交、测试点�
 
 完成任务可以派生两类子任务。`POST /api/ai/problem-tasks/{id}/iterations` 将父版本完整结果
 和用户改进意见一同交给模型；`POST /api/ai/problem-tasks/{id}/test-refinements` 保持核心题意
-及输入输出协议稳定，按简单、边界、性能、特殊情形、溢出、易错对抗和多样数据等策略补强
-测试点。任务持久化 `parent_task_id`、`iteration_number`、`task_type` 和测试计划，形成可审计、
+及输入输出协议稳定。智能命题与迭代请求都可以为简单、普通、边界、时间限制、特殊情形、
+溢出、易错对抗和多样数据等类型分别指定测试点数量。任务持久化 `parent_task_id`、
+`iteration_number`、`task_type` 和测试计划，形成可审计、
 可回退的版本链。启动时会对旧 SQLite 数据库执行仅新增字段的幂等迁移。
 
 ## 已知部署边界

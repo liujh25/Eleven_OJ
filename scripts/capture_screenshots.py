@@ -61,17 +61,18 @@ def main() -> None:
         page.locator("div.stButton button").nth(3).click()
         page.wait_for_timeout(900)
         assert "模型配置" in page.locator("body").inner_text()
+        page.get_by_role("tab", name="智能命题", exact=True).click()
+        page.wait_for_timeout(500)
+        authoring = page.locator("body").inner_text()
+        assert "普通测试点" in authoring
+        assert "时间限制测试点" in authoring
         page.screenshot(path=OUTPUT / "04-ai-authoring.png", full_page=True)
         page.get_by_role("tab", name="迭代改进", exact=True).click()
         page.wait_for_timeout(500)
-        assert "根据反馈继续迭代" in page.locator("body").inner_text()
+        iteration = page.locator("body").inner_text()
+        assert "根据反馈继续迭代" in iteration
+        assert "普通测试点" in iteration
         page.screenshot(path=OUTPUT / "06-ai-iteration.png", full_page=True)
-        page.get_by_role("tab", name="精细测试点", exact=True).click()
-        page.wait_for_timeout(500)
-        ai_tests = page.locator("body").inner_text()
-        assert "性能限制" in ai_tests
-        assert "易错对抗" in ai_tests
-        page.screenshot(path=OUTPUT / "07-ai-test-design.png", full_page=True)
         page.get_by_role("button", name="← 返回首页", exact=True).click()
         page.wait_for_timeout(900)
         page.locator("div.stButton button").nth(0).click()

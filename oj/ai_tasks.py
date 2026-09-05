@@ -17,6 +17,7 @@ _tasks: dict[str, asyncio.Task] = {}
 
 _TEST_STRATEGIES = {
     "basic": "简单测试：覆盖题面样例附近和最常见的正常输入，便于快速定位基础错误",
+    "normal": "普通测试：覆盖题目约束中段的常规数据与典型组合，检验完整算法逻辑",
     "boundary": "边界测试：覆盖最小值、最大值、空/单元素、零值及临界转折点中适用的情况",
     "performance": "性能测试：构造约束上界的合法大规模输入，使未采用目标优化算法的实现超时",
     "corner": "特殊情形：覆盖重复值、有序/逆序、全相同、退化结构等与题目相关的角落情况",
@@ -86,22 +87,32 @@ def _cost(config: AIConfig, input_tokens: int, output_tokens: int) -> float:
 
 def _test_plan_prompt(plan: dict | None) -> str:
     plan = plan or {
-        "strategies": ["basic", "boundary", "corner"],
+        "strategies": ["basic", "normal", "boundary", "corner"],
         "target_count": 10,
         "preserve_existing": True,
         "custom_requirements": "",
     }
-    strategy_lines = [
-        f"- {_TEST_STRATEGIES[strategy]}"
-        for strategy in plan.get("strategies", [])
-        if strategy in _TEST_STRATEGIES
-    ]
+    counts = plan.get("case_counts") or {}
+    if counts:
+        strategy_lines = [
+            f"- {_TEST_STRATEGIES[strategy]}；生成 {count} 个"
+            for strategy, count in counts.items()
+            if strategy in _TEST_STRATEGIES
+        ]
+        target_count = sum(counts.values())
+    else:
+        strategy_lines = [
+            f"- {_TEST_STRATEGIES[strategy]}"
+            for strategy in plan.get("strategies", [])
+            if strategy in _TEST_STRATEGIES
+        ]
+        target_count = plan.get("target_count", 10)
     preserve = (
         "保留并复核已有有效测试点" if plan.get("preserve_existing", True) else "可以重建测试点集合"
     )
     custom = plan.get("custom_requirements") or "无"
     return (
-        f"测试点目标数量：{plan.get('target_count', 10)}；{preserve}。\n"
+        f"测试点目标数量：{target_count}；{preserve}。\n"
         f"测试策略：\n{chr(10).join(strategy_lines)}\n自定义要求：{custom}"
     )
 
