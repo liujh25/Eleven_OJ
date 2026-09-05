@@ -30,7 +30,10 @@ async def register_language(
         validate_language_commands(body.compile_cmd, body.run_cmd)
     except ValueError as exc:
         fail(400, str(exc))
-    language = Language(**body.model_dump())
+    values = body.model_dump()
+    values["time_limit"] = body.time_limit or 0.0
+    values["memory_limit"] = body.memory_limit or 0
+    language = Language(**values)
     db.add(language)
     await db.commit()
     return envelope({"name": language.name}, "language registered")

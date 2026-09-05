@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from oj.api import envelope, fail
 from oj.db import get_db
 from oj.dependencies import admin_user, current_user
-from oj.models import Problem, User
+from oj.models import AccessAudit, AITask, Problem, Submission, TestCaseResult, User
 from oj.schemas import ProblemBody, VisibilityBody
 
 router = APIRouter(prefix="/api/problems", tags=["problems"])
@@ -26,8 +26,8 @@ def problem_data(problem: Problem) -> dict:
         "hint": problem.hint or "",
         "source": problem.source or "",
         "tags": problem.tags or [],
-        "time_limit": problem.time_limit,
-        "memory_limit": problem.memory_limit,
+        "time_limit": problem.time_limit or 3.0,
+        "memory_limit": problem.memory_limit or 128,
         "author": problem.author or "",
         "difficulty": problem.difficulty or "",
     }
@@ -37,6 +37,8 @@ def apply_problem(problem: Problem, body: ProblemBody) -> None:
     values = body.model_dump()
     values["samples"] = [item.model_dump() for item in body.samples]
     values["testcases"] = [item.model_dump() for item in body.testcases]
+    values["time_limit"] = body.time_limit or 0.0
+    values["memory_limit"] = body.memory_limit or 0
     for key, value in values.items():
         setattr(problem, key, value)
 
@@ -132,6 +134,13 @@ async def delete_problem(
     problem = await db.get(Problem, problem_id)
     if problem is None:
         fail(404, "problem not found")
+    submission_ids = select(Submission.id).where(Submission.problem_id == problem_id)
+    # SQLite foreign-key enforcement can differ between deployments.  Delete
+    # dependants explicitly so the API contract remains deterministic.
+    await db.execute(delete(TestCaseResult).where(TestCaseResult.submission_id.in_(submission_ids)))
+    await db.execute(delete(AccessAudit).where(AccessAudit.problem_id == problem_id))
+    await db.execute(delete(Submission).where(Submission.problem_id == problem_id))
+    await db.execute(delete(AITask).where(AITask.problem_id == problem_id))
     await db.delete(problem)
     await db.commit()
     return envelope({"id": problem_id}, "delete success")

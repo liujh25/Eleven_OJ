@@ -30,6 +30,7 @@ async def submission_log(
             user_id=user.id,
             problem_id=problem.id,
             submission_id=submission.id,
+            action="view_logs",
             status="200" if allowed else "403",
         )
     )

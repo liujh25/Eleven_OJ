@@ -13,6 +13,7 @@ from typing import Any
 
 import psutil  # type: ignore[import-untyped]
 
+from oj.config import get_settings
 from oj.models import Language, Problem
 
 FORBIDDEN_COMMAND_CHARS = set(";&|><`\n\r")
@@ -51,6 +52,15 @@ def validate_language_commands(compile_cmd: str | None, run_cmd: str) -> None:
 
 def normalize_output(value: str) -> str:
     return "\n".join(line.rstrip() for line in value.replace("\r\n", "\n").split("\n")).rstrip("\n")
+
+
+def effective_limits(problem: Problem, language: Language) -> tuple[float, int]:
+    """Resolve each judge limit independently by problem/language/system priority."""
+    settings = get_settings()
+    return (
+        problem.time_limit or language.time_limit or settings.default_time_limit_seconds,
+        problem.memory_limit or language.memory_limit or settings.default_memory_limit_mb,
+    )
 
 
 def _resource_limiter(memory_mb: int, cpu_seconds: int):
@@ -124,7 +134,16 @@ async def run_process(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=cwd,
-        env={"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8"},
+        env={
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONIOENCODING": "utf-8",
+            # Compilers create intermediate files.  Point every platform's
+            # temp convention at the isolated judge directory instead of a
+            # shared or unwritable system location.
+            "TMPDIR": str(cwd),
+            "TEMP": str(cwd),
+            "TMP": str(cwd),
+        },
         **kwargs,
     )
     state: dict[str, Any] = {"peak": 0.0, "mle": False}
@@ -159,8 +178,7 @@ async def run_process(
 
 async def evaluate(problem: Problem, language: Language, code: str) -> dict[str, Any]:
     validate_language_commands(language.compile_cmd, language.run_cmd)
-    time_limit = problem.time_limit or language.time_limit or 3.0
-    memory_limit = problem.memory_limit or language.memory_limit or 128
+    time_limit, memory_limit = effective_limits(problem, language)
     suffix = language.file_ext
     with tempfile.TemporaryDirectory(prefix="async-oj-") as temporary:
         workdir = Path(temporary)

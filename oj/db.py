@@ -34,6 +34,10 @@ def _migrate_existing_database(connection: Connection) -> None:
     connection.exec_driver_sql(
         "CREATE INDEX IF NOT EXISTS ix_ai_tasks_parent_task_id ON ai_tasks (parent_task_id)"
     )
+    # Normalize the spelling used by early development builds.
+    connection.exec_driver_sql(
+        "UPDATE access_audits SET action = 'view_logs' WHERE action = 'view_log'"
+    )
 
 
 async def initialize_database() -> None:

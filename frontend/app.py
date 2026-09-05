@@ -581,7 +581,7 @@ def workspace_page() -> None:
     except Exception as exc:
         show_error(exc)
         return
-    tab_names = ["在线做题", "提交记录", "结果详情"]
+    tab_names = ["在线做题", "提交记录", "结果详情", "语言配置"]
     if user["role"] == "admin":
         tab_names.append("题目管理")
     tabs = st.tabs(tab_names)
@@ -651,6 +651,16 @@ def workspace_page() -> None:
                                 "自动刷新结果", value=submitted_now, key=f"auto-{selected}"
                             )
                             render_submission_result(latest, auto_refresh=auto)
+                    st.markdown("#### 本题提交记录")
+                    st.caption("管理员可查看所有用户在本题的提交；普通用户仅能查看自己的提交。")
+                    problem_submissions = client().get(
+                        "/api/submissions/",
+                        params={"problem_id": selected, "page": 1, "page_size": 100},
+                    )
+                    st.metric("本题可见提交数", problem_submissions["total"])
+                    st.dataframe(
+                        problem_submissions["submissions"], width="stretch", hide_index=True
+                    )
         except Exception as exc:
             show_error(exc)
     with tabs[1]:
@@ -673,8 +683,46 @@ def workspace_page() -> None:
                 render_submission_result(submission_id, auto_refresh=auto)
             except Exception as exc:
                 show_error(exc)
+    with tabs[3]:
+        st.subheader("动态添加语言")
+        st.info("服务器已安装对应编译器或解释器后即可注册语言。下面预填了 GCC 的 C11 配置。")
+        st.caption("命令以参数数组安全执行，仅支持 {src} 与 {exe} 占位符。")
+        with st.form("language-registration"):
+            first, second = st.columns(2)
+            language_name = first.text_input("语言名称", value="c")
+            file_ext = second.text_input("源文件扩展名", value=".c")
+            compile_cmd = st.text_input("编译命令", value="gcc {src} -std=c11 -O2 -o {exe}")
+            run_cmd = st.text_input("运行命令", value="{exe}")
+            limit_left, limit_right = st.columns(2)
+            custom_time = limit_left.checkbox("设置语言时间限制", value=False)
+            custom_memory = limit_right.checkbox("设置语言内存限制", value=False)
+            time_limit = limit_left.number_input(
+                "时间限制（秒）", 0.05, 60.0, 3.0, disabled=not custom_time
+            )
+            memory_limit = limit_right.number_input(
+                "内存限制（MB）", 16, 2048, 128, disabled=not custom_memory
+            )
+            if st.form_submit_button("注册语言", type="primary"):
+                payload = {
+                    "name": language_name,
+                    "file_ext": file_ext,
+                    "compile_cmd": compile_cmd or None,
+                    "run_cmd": run_cmd,
+                }
+                if custom_time:
+                    payload["time_limit"] = time_limit
+                if custom_memory:
+                    payload["memory_limit"] = memory_limit
+                try:
+                    client().post("/api/languages/", json=payload)
+                    st.success(f"语言 {language_name} 注册成功")
+                    st.rerun()
+                except Exception as exc:
+                    show_error(exc)
+        st.markdown("#### 当前可用语言")
+        st.write("、".join(languages))
     if user["role"] == "admin":
-        with tabs[3]:
+        with tabs[4]:
             problem_management(all_problems)
 
 

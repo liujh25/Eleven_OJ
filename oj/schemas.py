@@ -43,8 +43,11 @@ class ProblemBody(StrictModel):
     hint: str = ""
     source: str = ""
     tags: list[str] = Field(default_factory=list)
-    time_limit: float = Field(default=3.0, gt=0, le=60)
-    memory_limit: int = Field(default=128, ge=16, le=2048)
+    # None means that the judge should fall back to the language, then the
+    # system-wide default.  The public problem response still exposes 3/128
+    # when no problem-specific value was configured.
+    time_limit: float | None = Field(default=None, gt=0, le=60)
+    memory_limit: int | None = Field(default=None, ge=16, le=2048)
     author: str = ""
     difficulty: str = ""
 
@@ -66,8 +69,8 @@ class LanguageBody(StrictModel):
     file_ext: str = Field(min_length=2, max_length=16, pattern=r"^\.[A-Za-z0-9]+$")
     compile_cmd: str | None = None
     run_cmd: str = Field(min_length=1, max_length=500)
-    time_limit: float = Field(default=3.0, gt=0, le=60)
-    memory_limit: int = Field(default=128, ge=16, le=2048)
+    time_limit: float | None = Field(default=None, gt=0, le=60)
+    memory_limit: int | None = Field(default=None, ge=16, le=2048)
 
 
 class SubmissionBody(StrictModel):

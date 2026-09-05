@@ -5,7 +5,13 @@ import sys
 
 import pytest
 
-from oj.evaluator import evaluate, normalize_output, parse_command, validate_language_commands
+from oj.evaluator import (
+    effective_limits,
+    evaluate,
+    normalize_output,
+    parse_command,
+    validate_language_commands,
+)
 from oj.models import Language, Problem
 
 
@@ -45,6 +51,23 @@ def test_command_validation_and_normalization(tmp_path):
         validate_language_commands(None, "python -c print(1)")
 
 
+def test_effective_limits_resolve_each_field_independently():
+    problem = make_problem()
+    language = python_language()
+    problem.time_limit = 0
+    problem.memory_limit = 64
+    language.time_limit = 2
+    language.memory_limit = 256
+    assert effective_limits(problem, language) == (2, 64)
+
+    problem.memory_limit = 0
+    assert effective_limits(problem, language) == (2, 256)
+
+    language.time_limit = 0
+    language.memory_limit = 0
+    assert effective_limits(problem, language) == (3.0, 128)
+
+
 @pytest.mark.parametrize(
     ("code", "verdict"),
     [
@@ -55,7 +78,11 @@ def test_command_validation_and_normalization(tmp_path):
     ],
 )
 async def test_python_verdicts(code, verdict):
-    result = await evaluate(make_problem(0.15), python_language(), code)
+    # Interpreter startup is slower on loaded Windows CI hosts; only the
+    # infinite-loop case needs the deliberately tight deadline.
+    result = await evaluate(
+        make_problem(0.15 if verdict == "TLE" else 0.75), python_language(), code
+    )
     assert result["status"] == "success"
     assert result["details"][0]["result"] == verdict
 
@@ -72,3 +99,18 @@ async def test_cpp_compile_error():
     )
     result = await evaluate(make_problem(), language, "int main( {")
     assert result["details"][0]["result"] == "CE"
+
+
+@pytest.mark.skipif(shutil.which("gcc") is None, reason="gcc is unavailable")
+async def test_dynamically_registered_c_language_can_judge():
+    language = Language(
+        name="c-test",
+        file_ext=".c",
+        compile_cmd="gcc {src} -std=c11 -O2 -o {exe}",
+        run_cmd="{exe}",
+        time_limit=1,
+        memory_limit=128,
+    )
+    code = '#include <stdio.h>\nint main(void){long long a,b;scanf("%lld%lld",&a,&b);printf("%lld\\n",a+b);}'  # noqa: E501
+    result = await evaluate(make_problem(), language, code)
+    assert result["details"][0]["result"] == "AC", result

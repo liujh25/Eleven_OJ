@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from oj.db import SessionFactory
 from oj.judge_tasks import run_submission
-from oj.models import Submission, TestCaseResult, User
+from oj.models import AccessAudit, AITask, Problem, Submission, TestCaseResult, User
 from oj.routers.users import difficulty_level_gain
 from tests.conftest import login, problem_body
 
@@ -77,6 +77,30 @@ async def test_problem_crud_and_validation(api):
     assert (await api.get("/api/problems/sum_2")).status_code == 404
 
 
+async def test_problem_defaults_and_testcases_visible_to_normal_user(api):
+    await login(api, "admin", "admintestpassword")
+    body = problem_body("inherited_limits")
+    body.pop("time_limit")
+    body.pop("memory_limit")
+    assert (await api.post("/api/problems/", json=body)).status_code == 200
+    await api.post("/api/users/", json={"username": "alice", "password": "secret1"})
+    api.cookies.clear()
+    await login(api, "alice", "secret1")
+    detail = (await api.get("/api/problems/inherited_limits")).json()["data"]
+    assert detail["time_limit"] == 3.0
+    assert detail["memory_limit"] == 128
+    assert detail["testcases"] == [
+        {"input": "1 2", "output": "3"},
+        {"input": "-5 5", "output": "0"},
+    ]
+
+    async with SessionFactory() as db:
+        stored = await db.get(Problem, "inherited_limits")
+        assert stored is not None
+        assert stored.time_limit == 0
+        assert stored.memory_limit == 0
+
+
 async def test_language_registry_and_auth_precedence(api):
     invalid_without_login = await api.post("/api/problems/", json={})
     assert invalid_without_login.status_code == 401
@@ -94,6 +118,17 @@ async def test_language_registry_and_auth_precedence(api):
         },
     )
     assert created.status_code == 200
+    c_language = await api.post(
+        "/api/languages/",
+        json={
+            "name": "c",
+            "file_ext": ".c",
+            "compile_cmd": "gcc {src} -std=c11 -O2 -o {exe}",
+            "run_cmd": "{exe}",
+        },
+    )
+    assert c_language.status_code == 200
+    assert "c" in (await api.get("/api/languages/")).json()["data"]["name"]
     unsafe = await api.post(
         "/api/languages/",
         json={"name": "unsafe", "file_ext": ".py", "run_cmd": "python {src}; whoami"},
@@ -128,6 +163,71 @@ async def test_submission_queries_rejudge_and_rate_limit(api):
     submission_id = listing.json()["data"]["submissions"][0]["submission_id"]
     rejudged = await api.put(f"/api/submissions/{submission_id}/rejudge")
     assert rejudged.json()["data"]["status"] == "pending"
+
+
+async def test_problem_submission_scope_and_per_user_counts(api):
+    await login(api, "admin", "admintestpassword")
+    await api.post("/api/problems/", json=problem_body())
+    alice = await api.post("/api/users/", json={"username": "alice", "password": "secret1"})
+    bob = await api.post("/api/users/", json={"username": "bobby", "password": "secret1"})
+    alice_id = alice.json()["data"]["user_id"]
+    bob_id = bob.json()["data"]["user_id"]
+    alice_one = Submission(
+        user_id=alice_id,
+        problem_id="sum_2",
+        language="python",
+        code="print(3)",
+        status="success",
+        score=20,
+        counts=20,
+    )
+    alice_two = Submission(
+        user_id=alice_id,
+        problem_id="sum_2",
+        language="python",
+        code="print(3)",
+        status="success",
+        score=20,
+        counts=20,
+    )
+    bob_one = Submission(
+        user_id=bob_id,
+        problem_id="sum_2",
+        language="python",
+        code="print(0)",
+        status="success",
+        score=0,
+        counts=20,
+    )
+    async with SessionFactory() as db:
+        db.add_all([alice_one, alice_two, bob_one])
+        await db.commit()
+
+    admin_view = (await api.get("/api/submissions/", params={"problem_id": "sum_2"})).json()["data"]
+    assert admin_view["total"] == 3
+    assert {item["submission_id"] for item in admin_view["submissions"]} == {
+        alice_one.id,
+        alice_two.id,
+        bob_one.id,
+    }
+
+    api.cookies.clear()
+    await login(api, "alice", "secret1")
+    alice_view = (await api.get("/api/submissions/", params={"problem_id": "sum_2"})).json()["data"]
+    assert alice_view["total"] == 2
+    assert {item["submission_id"] for item in alice_view["submissions"]} == {
+        alice_one.id,
+        alice_two.id,
+    }
+    profile = (await api.get(f"/api/users/{alice_id}")).json()["data"]
+    assert profile["submit_count"] == 2
+    assert profile["resolve_count"] == 1
+
+    api.cookies.clear()
+    await login(api, "admin", "admintestpassword")
+    bob_profile = (await api.get(f"/api/users/{bob_id}")).json()["data"]
+    assert bob_profile["submit_count"] == 1
+    assert bob_profile["resolve_count"] == 0
 
 
 async def test_submission_worker_persists_results(api):
@@ -191,6 +291,66 @@ async def test_logs_visibility_and_access_audit(api):
     await login(api, "admin", "admintestpassword")
     audits = await api.get("/api/logs/access/", params={"user_id": alice_id})
     assert {entry["status"] for entry in audits.json()["data"]} == {"200", "403"}
+    assert {entry["action"] for entry in audits.json()["data"]} == {"view_logs"}
+
+
+async def test_delete_problem_cascades_all_related_records(api):
+    await login(api, "admin", "admintestpassword")
+    await api.post("/api/problems/", json=problem_body())
+    async with SessionFactory() as db:
+        submission = Submission(
+            user_id="admin",
+            problem_id="sum_2",
+            language="python",
+            code="print(3)",
+            status="success",
+            score=10,
+            counts=20,
+        )
+        db.add(submission)
+        await db.flush()
+        db.add_all(
+            [
+                TestCaseResult(submission_id=submission.id, case_number=1, result="AC"),
+                AccessAudit(
+                    user_id="admin",
+                    problem_id="sum_2",
+                    submission_id=submission.id,
+                    action="view_logs",
+                    status="200",
+                ),
+                AITask(
+                    user_id="admin",
+                    requirement="refine the existing problem",
+                    problem_id="sum_2",
+                ),
+            ]
+        )
+        await db.commit()
+
+    assert (await api.delete("/api/problems/sum_2")).status_code == 200
+    async with SessionFactory() as db:
+        assert (
+            await db.scalar(
+                select(func.count()).select_from(Submission).where(Submission.problem_id == "sum_2")
+            )
+            == 0
+        )
+        assert await db.scalar(select(func.count()).select_from(TestCaseResult)) == 0
+        assert (
+            await db.scalar(
+                select(func.count())
+                .select_from(AccessAudit)
+                .where(AccessAudit.problem_id == "sum_2")
+            )
+            == 0
+        )
+        assert (
+            await db.scalar(
+                select(func.count()).select_from(AITask).where(AITask.problem_id == "sum_2")
+            )
+            == 0
+        )
 
 
 async def test_reset_recreates_initial_state(api):

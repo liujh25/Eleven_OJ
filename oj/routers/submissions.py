@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -98,7 +97,7 @@ async def list_submissions(
     items = list((await db.scalars(query)).all())
     summaries = []
     for item in items:
-        value: dict[str, Any] = {"submission_id": item.id, "status": item.status}
+        value: dict[str, object] = {"submission_id": item.id, "status": item.status}
         if item.status == "success":
             value.update({"score": item.score, "counts": item.counts})
         summaries.append(value)

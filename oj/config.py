@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 24
     cookie_secure: bool = False
     executor_enabled: bool = True
+    default_time_limit_seconds: float = 3.0
+    default_memory_limit_mb: int = 128
     ai_timeout_seconds: float = 90.0
     data_dir: Path = Path("data")
 

@@ -53,8 +53,10 @@ class Problem(Base):
     hint: Mapped[str] = mapped_column(Text, default="")
     source: Mapped[str] = mapped_column(String(200), default="")
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
-    time_limit: Mapped[float] = mapped_column(Float, default=3.0)
-    memory_limit: Mapped[int] = mapped_column(Integer, default=128)
+    # Zero is the persisted sentinel for "inherit".  Keeping the columns
+    # non-null avoids a destructive SQLite migration for existing projects.
+    time_limit: Mapped[float] = mapped_column(Float, default=0.0)
+    memory_limit: Mapped[int] = mapped_column(Integer, default=0)
     author: Mapped[str] = mapped_column(String(100), default="")
     difficulty: Mapped[str] = mapped_column(String(40), default="")
     public_cases: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -69,8 +71,8 @@ class Language(Base):
     file_ext: Mapped[str] = mapped_column(String(16))
     compile_cmd: Mapped[str | None] = mapped_column(Text, nullable=True)
     run_cmd: Mapped[str] = mapped_column(Text)
-    time_limit: Mapped[float] = mapped_column(Float, default=3.0)
-    memory_limit: Mapped[int] = mapped_column(Integer, default=128)
+    time_limit: Mapped[float] = mapped_column(Float, default=0.0)
+    memory_limit: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Submission(Base):
@@ -78,7 +80,9 @@ class Submission(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    problem_id: Mapped[str] = mapped_column(ForeignKey("problems.id"), index=True)
+    problem_id: Mapped[str] = mapped_column(
+        ForeignKey("problems.id", ondelete="CASCADE"), index=True
+    )
     language: Mapped[str] = mapped_column(ForeignKey("languages.name"), index=True)
     code: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
@@ -110,8 +114,12 @@ class AccessAudit(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    problem_id: Mapped[str] = mapped_column(ForeignKey("problems.id"), index=True)
-    submission_id: Mapped[str] = mapped_column(String(32), index=True)
+    problem_id: Mapped[str] = mapped_column(
+        ForeignKey("problems.id", ondelete="CASCADE"), index=True
+    )
+    submission_id: Mapped[str] = mapped_column(
+        ForeignKey("submissions.id", ondelete="CASCADE"), index=True
+    )
     action: Mapped[str] = mapped_column(String(32), default="view_logs")
     status: Mapped[str] = mapped_column(String(3))
     time: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
