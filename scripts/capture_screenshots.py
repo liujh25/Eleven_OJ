@@ -67,6 +67,15 @@ def main() -> None:
         assert "普通测试点" in authoring
         assert "时间限制测试点" in authoring
         page.screenshot(path=OUTPUT / "04-ai-authoring.png", full_page=True)
+        page.get_by_role("tab", name="洛谷参考命题", exact=True).click()
+        page.wait_for_timeout(500)
+        luogu_authoring = page.locator("body").inner_text()
+        assert "根据洛谷题号创作新题" in luogu_authoring
+        assert "洛谷题号" in luogu_authoring
+        assert "相似题" in luogu_authoring
+        assert "扩展题" in luogu_authoring
+        assert "读取参考题并开始命题" in luogu_authoring
+        page.screenshot(path=OUTPUT / "07-ai-luogu.png", full_page=True)
         page.get_by_role("tab", name="迭代改进", exact=True).click()
         page.wait_for_timeout(500)
         iteration = page.locator("body").inner_text()

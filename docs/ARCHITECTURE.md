@@ -26,6 +26,7 @@ SQLite 保存用户、服务端 Session、题目、语言、提交、测试点�
 - `/api/users/`、`/api/auth/*`：注册、用户、角色与 Session 生命周期。
 - `/api/submissions/{id}/log`、`/api/logs/access/`：测试点结果与访问审计。
 - `/api/ai/model-config`、`/api/ai/problem-tasks/*`：模型配置、命题任务、版本迭代与测试点增强。
+- `POST /api/ai/luogu-problem-tasks/`：按洛谷题号创建原创相似题或扩展题任务。
 - `/api/reset/`：自动测试恢复初始管理员、Python 和 C++ 配置。
 
 题目详情对所有已登录角色返回完整 `testcases`。提交列表仅传 `problem_id` 时，管理员
@@ -79,6 +80,13 @@ SQLite 保存用户、服务端 Session、题目、语言、提交、测试点�
 溢出、易错对抗和多样数据等类型分别指定测试点数量。任务持久化 `parent_task_id`、
 `iteration_number`、`task_type` 和测试计划，形成可审计、
 可回退的版本链。启动时会对旧 SQLite 数据库执行仅新增字段的幂等迁移。
+
+洛谷参考命题仅接受格式受限的题号，并拼接到固定 HTTPS 主机，避免任意 URL 请求和 SSRF。
+服务端以流式方式读取公开页面，设置超时和 2 MB 上限，从 `lentille-context` 结构化数据中
+提取题名、难度、题面分区、样例与资源限制。外部题面被包裹为不可信参考数据；系统提示明确
+禁止遵循其中的指令、复制标题或大段叙事，只允许提炼算法考点并重新设计场景、数据范围和
+测试边界。任务响应仅公开参考来源摘要，完整参考数据不经 API 回显；后续迭代沿版本链继承
+该来源，使模型能够继续改进而不必再次请求洛谷。
 
 ## 已知部署边界
 

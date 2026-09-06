@@ -13,7 +13,7 @@ Python/C++ 异步评测、提交管理、用户权限、测试点日志、Stream
 | Step 4 | 注册、服务端 Session、登录/退出、角色与封禁管理 |
 | Step 5 | 测试点日志、题目级公开策略、成功/拒绝访问审计 |
 | Step 6 | 用户、题目与评测同屏工作区、提交记录和结果页面 |
-| Advance | OpenAI 兼容模型、版本迭代、精细测试点、进度/取消、Token/费用、题目导入 |
+| Advance | OpenAI 兼容模型、洛谷参考命题、版本迭代、精细测试点、进度/取消、Token/费用、题目导入 |
 
 首页采用角色化控制台布局：左侧展示用户等级和角色背景，右侧提供习题评测、账户、
 管理员用户管理和 AI 命题入口。满分通过的新题目按难度升级，简单、中等、困难题
@@ -69,6 +69,7 @@ streamlit run frontend/app.py
 - `OJ_DEFAULT_TIME_LIMIT_SECONDS`、`OJ_DEFAULT_MEMORY_LIMIT_MB`：系统默认评测限制，
   默认分别为 3 秒和 128 MB。
 - `OJ_AI_TIMEOUT_SECONDS`：外部模型请求超时。
+- `OJ_LUOGU_TIMEOUT_SECONDS`：读取洛谷公开题目页面的超时，默认 15 秒。
 - `OJ_API_URL`：Streamlit 使用的后端地址。
 
 运行时数据库、加密密钥、临时代码和 `.env` 都被 Git 忽略。AI 模型配置在页面中
@@ -79,6 +80,12 @@ streamlit run frontend/app.py
 迭代时可以填写自然语言反馈，以任一已完成任务为基线生成新版本；每个新版本保留父任务 ID
 和迭代轮次，旧版本不会被覆盖。时间限制测试点要求生成可执行的确定输入输出，并说明测试点
 要区分的算法复杂度。
+
+“洛谷参考命题”允许输入 `P1001` 或 `1001` 形式的题号，并选择“相似题”或“扩展题”。
+系统只访问固定的 `luogu.com.cn/problem/{题号}` 页面，提炼考点、难度、背景作用、限制和
+样例结构后生成原创题目；不会把参考题直接导入题库。洛谷页面内容按不可信外部数据处理，
+其中出现的任何指令都不会被执行。参考来源会随 AI 版本链保留，但 API 只返回题号、标题、
+难度和链接等摘要，不回显整份参考题面。
 
 ## API 示例
 
@@ -96,6 +103,11 @@ curl -b cookies.txt "http://127.0.0.1:8000/api/problems/?keyword=动态规划&ta
 curl -b cookies.txt -X POST http://127.0.0.1:8000/api/languages/ \
   -H "Content-Type: application/json" \
   -d '{"name":"c","file_ext":".c","compile_cmd":"gcc {src} -std=c11 -O2 -o {exe}","run_cmd":"{exe}"}'
+
+# 需先在 AI 页面保存 OpenAI 兼容模型配置
+curl -b cookies.txt -X POST http://127.0.0.1:8000/api/ai/luogu-problem-tasks/ \
+  -H "Content-Type: application/json" \
+  -d '{"problem_id":"P1001","mode":"extension","additional_requirement":"增加多次查询","test_plan":{"case_counts":{"normal":3}}}'
 ```
 
 题目示例位于 [examples/sum_2.json](examples/sum_2.json)。AI 假服务可用于无密钥演示：
@@ -116,7 +128,8 @@ pytest --cov=oj --cov-report=term-missing --cov-fail-under=80 -q
 
 当前测试覆盖认证和权限优先级、全部基础 CRUD、限制继承、级联删除、题目测试点可见性、
 单题按角色提交范围、独立用户统计、动态 C 注册、语言命令安全、Python/C++ 判题状态、
-提交限流与重评、日志公开和审计、AI 进度/取消/费用，以及 Streamlit 冒烟。GitHub
+提交限流与重评、日志公开和审计、洛谷页面安全解析、AI 进度/取消/费用，以及 Streamlit
+真实浏览器冒烟。GitHub
 Actions 在 Python 3.10/3.12 的 Ubuntu 环境重复以上检查。
 
 评测的时间和内存限制分别独立按照“题目配置 → 语言配置 → 系统默认值”确定。普通用户
