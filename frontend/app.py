@@ -56,6 +56,21 @@ def character_data_uri() -> str:
 
 def set_page(page: str) -> None:
     st.session_state.nav_page = page
+    if page == "题目与评测":
+        st.session_state.workspace_view = "library"
+
+
+def open_problem(problem_id: str) -> None:
+    st.session_state.workspace_problem = problem_id
+    st.session_state.workspace_view = "judge"
+
+
+def show_problem_library() -> None:
+    st.session_state.workspace_view = "library"
+
+
+def show_judge_workspace() -> None:
+    st.session_state.workspace_view = "judge"
 
 
 def client() -> OJClient:
@@ -571,12 +586,111 @@ def problem_management(items: list[dict]) -> None:
             show_error(exc)
 
 
+def problem_library_page(all_problems: list[dict]) -> None:
+    st.markdown(
+        """
+        <style>
+        .library-intro {
+          padding:18px 22px;margin-bottom:14px;background:rgba(15,30,45,.96);color:white;
+          border-left:7px solid #2563eb;border-bottom:3px solid #f97316;
+          box-shadow:0 10px 26px rgba(15,23,42,.16);
+        }
+        .library-intro h2 {color:white;margin:0 0 5px;font-size:25px}
+        .library-intro p {color:#cbd5e1;margin:0}
+        .problem-index {font:800 12px/1 'Segoe UI',sans-serif;color:#2563eb;letter-spacing:.14em}
+        .problem-title {font:850 20px/1.35 'Segoe UI',sans-serif;color:#0f172a;margin:5px 0}
+        .problem-meta {color:#64748b;font-size:13px}
+        </style>
+        <div class="library-intro">
+          <h2>习题列表</h2>
+          <p>滚动浏览完整题库，或使用题号、标题、题面、标签、难度与来源关键词快速定位。</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    all_tags = sorted({tag for item in all_problems for tag in item.get("tags", [])})
+    search_column, tag_column, action_column = st.columns([3, 1.4, 1.1])
+    keyword = search_column.text_input(
+        "关键词查找",
+        placeholder="例如：动态规划、数组、sum_2……",
+        key="library_keyword",
+    )
+    selected_tag = tag_column.selectbox("标签筛选", ["全部标签", *all_tags], key="library_tag")
+    action_column.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    action_column.button(
+        "进入评测控制台",
+        key="library-console",
+        width="stretch",
+        on_click=show_judge_workspace,
+    )
+
+    params = {}
+    if keyword.strip():
+        params["keyword"] = keyword.strip()
+    if selected_tag != "全部标签":
+        params["tag"] = selected_tag
+    try:
+        visible_problems = client().get("/api/problems/", params=params) if params else all_problems
+    except Exception as exc:
+        show_error(exc)
+        return
+
+    count_column, guide_column = st.columns([1, 4])
+    count_column.metric("匹配题目", len(visible_problems))
+    guide_column.caption("列表区域可独立滚动；点击“开始作答”会进入题目与代码评测同屏页面。")
+    if not visible_problems:
+        st.warning("没有找到相关题目，请尝试更换关键词或标签。")
+        return
+
+    with st.container(height=610, border=False):
+        for index, problem in enumerate(visible_problems, start=1):
+            with st.container(border=True):
+                text_column, action_column = st.columns([5, 1], vertical_alignment="center")
+                with text_column:
+                    tags = " · ".join(problem.get("tags", [])) or "暂无标签"
+                    difficulty = problem.get("difficulty") or "未设置"
+                    safe_id = escape(str(problem["id"]))
+                    safe_title = escape(str(problem["title"]))
+                    safe_difficulty = escape(str(difficulty))
+                    safe_tags = escape(tags)
+                    safe_metadata = f"难度：{safe_difficulty}　|　标签：{safe_tags}"
+                    st.markdown(
+                        f"""
+                        <div class="problem-index">PROBLEM {index:02d} // {safe_id}</div>
+                        <div class="problem-title">{safe_title}</div>
+                        <div class="problem-meta">{safe_metadata}</div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                action_column.button(
+                    "开始作答 ›",
+                    key=f"library-open-{problem['id']}",
+                    width="stretch",
+                    type="primary",
+                    on_click=open_problem,
+                    args=(problem["id"],),
+                )
+
+
 def workspace_page() -> None:
     user = require_login()
     if not user:
         return
     try:
         all_problems = client().get("/api/problems/")
+    except Exception as exc:
+        show_error(exc)
+        return
+    if st.session_state.get("workspace_view", "library") == "library":
+        problem_library_page(all_problems)
+        return
+
+    st.button(
+        "← 返回题目列表",
+        key="back-problem-library",
+        on_click=show_problem_library,
+    )
+    try:
         languages = client().get("/api/languages/")["name"]
     except Exception as exc:
         show_error(exc)

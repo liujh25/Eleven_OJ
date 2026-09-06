@@ -61,6 +61,16 @@ async def test_problem_crud_and_validation(api):
     ]
     tagged = await api.get("/api/problems/", params={"tag": " 数学 "})
     assert [item["id"] for item in tagged.json()["data"]] == ["sum_2"]
+    keyword = await api.get("/api/problems/", params={"keyword": "整数 数学"})
+    assert [item["id"] for item in keyword.json()["data"]] == ["sum_2"]
+    title_keyword = await api.get("/api/problems/", params={"keyword": "两数"})
+    assert [item["id"] for item in title_keyword.json()["data"]] == ["sum_2"]
+    combined = await api.get("/api/problems/", params={"tag": "基础", "keyword": "sum_2"})
+    assert [item["id"] for item in combined.json()["data"]] == ["sum_2"]
+    no_keyword_match = await api.get("/api/problems/", params={"keyword": "图论"})
+    assert no_keyword_match.json()["data"] == []
+    blank_keyword = await api.get("/api/problems/", params={"keyword": "   "})
+    assert blank_keyword.status_code == 400
     missing_tag = await api.get("/api/problems/", params={"tag": "图论"})
     assert missing_tag.json()["data"] == []
     blank_tag = await api.get("/api/problems/", params={"tag": "   "})

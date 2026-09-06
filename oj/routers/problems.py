@@ -46,6 +46,7 @@ def apply_problem(problem: Problem, body: ProblemBody) -> None:
 @router.get("/")
 async def list_problems(
     tag: str | None = Query(default=None, max_length=50),
+    keyword: str | None = Query(default=None, max_length=100),
     _: User = Depends(current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -58,6 +59,30 @@ async def list_problems(
             item
             for item in problems
             if normalized_tag in {value.casefold() for value in (item.tags or [])}
+        ]
+    if keyword is not None:
+        normalized_keyword = keyword.strip().casefold()
+        if not normalized_keyword:
+            fail(400, "keyword must not be blank")
+        terms = normalized_keyword.split()
+        problems = [
+            item
+            for item in problems
+            if all(
+                term
+                in "\n".join(
+                    [
+                        item.id,
+                        item.title,
+                        item.description,
+                        item.source or "",
+                        item.author or "",
+                        item.difficulty or "",
+                        *(item.tags or []),
+                    ]
+                ).casefold()
+                for term in terms
+            )
         ]
     return envelope(
         [

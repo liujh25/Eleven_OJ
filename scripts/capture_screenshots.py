@@ -77,9 +77,25 @@ def main() -> None:
         page.wait_for_timeout(900)
         page.locator("div.stButton button").nth(0).click()
         page.wait_for_timeout(1500)
+        library = page.locator("body").inner_text()
+        assert "习题列表" in library
+        assert "关键词查找" in library
+        assert "两数之和" in library
+        page.screenshot(path=OUTPUT / "03-problem-library.png", full_page=True)
+        page.get_by_label("关键词查找", exact=True).fill("图论")
+        page.get_by_label("关键词查找", exact=True).press("Enter")
+        page.wait_for_timeout(700)
+        assert "没有找到相关题目" in page.locator("body").inner_text()
+        page.get_by_label("关键词查找", exact=True).fill("两数")
+        page.get_by_label("关键词查找", exact=True).press("Enter")
+        page.wait_for_timeout(700)
+        assert "两数之和" in page.locator("body").inner_text()
+        page.get_by_role("button", name="开始作答 ›", exact=True).first.click()
+        page.wait_for_timeout(1200)
         workspace = page.locator("body").inner_text()
         assert "按标签查找" in workspace
         assert "提交代码" in workspace
+        assert "返回题目列表" in workspace
         page.screenshot(path=OUTPUT / "03-problems.png", full_page=True)
         docs = browser.new_page(viewport={"width": 1440, "height": 950})
         schema = httpx.get(f"{API}/openapi.json").json()
