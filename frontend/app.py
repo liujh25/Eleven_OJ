@@ -980,14 +980,48 @@ def ai_page() -> None:
             "只填写域名时会自动使用标准 /v1/chat/completions；填写自定义路径时会保留该路径。"
             "复杂命题单次模型请求默认最多等待 300 秒。"
         )
+        st.caption(
+            "Token 用量由模型接口自动返回；OpenAI 兼容接口通常不提供模型单价，"
+            "因此单价需要按供应商账单填写。"
+            "费用 = 输入 Token ÷ 计价 Token 数 × 输入单价 + 输出 Token ÷ 计价 Token 数 × 输出单价。"
+            "若只需统计 Token，可将两个单价都保留为 0。"
+        )
         with st.form("ai-config"):
-            provider_url = st.text_input("提供商 URL", placeholder="https://provider.example/v1")
+            provider_url = st.text_input(
+                "提供商 URL",
+                placeholder="例如：https://llmapi.paratera.com/v1",
+                help=(
+                    "填写兼容 API 的基础地址即可；若供应商给出完整 chat/completions 地址，"
+                    "也可直接填写。"
+                ),
+            )
             model = st.text_input("模型名称")
             api_key = st.text_input("模型密钥", type="password")
             c1, c2, c3 = st.columns(3)
-            input_price = c1.number_input("输入价格", min_value=0.0, format="%.6f")
-            output_price = c2.number_input("输出价格", min_value=0.0, format="%.6f")
-            price_unit = c3.number_input("计价 Token 数", min_value=1, value=1_000_000)
+            input_price = c1.number_input(
+                "输入单价（USD）",
+                min_value=0.0,
+                format="%.6f",
+                help=(
+                    "每个计价单位内输入 Token 的价格；若供应商按百万 Token 报价，"
+                    "就填写每百万 Token 输入价。"
+                ),
+            )
+            output_price = c2.number_input(
+                "输出单价（USD）",
+                min_value=0.0,
+                format="%.6f",
+                help=(
+                    "每个计价单位内输出 Token 的价格；若供应商按百万 Token 报价，"
+                    "就填写每百万 Token 输出价。"
+                ),
+            )
+            price_unit = c3.number_input(
+                "计价 Token 数",
+                min_value=1,
+                value=1_000_000,
+                help="价格对应的 Token 数；多数供应商按 1,000,000 Token 报价。",
+            )
             if st.form_submit_button("保存配置", type="primary"):
                 try:
                     client().put(
