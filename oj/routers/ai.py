@@ -9,8 +9,15 @@ from oj.api import envelope, fail
 from oj.crypto import encrypt_secret
 from oj.db import get_db
 from oj.dependencies import current_user
+from oj.luogu import LuoguFetchError, LuoguProblemNotFound, fetch_luogu_problem
 from oj.models import AIConfig, AITask, Problem, User
-from oj.schemas import AIConfigBody, AIIterationBody, AITaskBody, AITestRefinementBody
+from oj.schemas import (
+    AIConfigBody,
+    AIIterationBody,
+    AITaskBody,
+    AITestRefinementBody,
+    LuoguTaskBody,
+)
 
 router = APIRouter(prefix="/api/ai", tags=["ai-authoring"])
 
@@ -24,6 +31,14 @@ def task_data(task: AITask) -> dict:
         "requirement": task.requirement,
         "feedback": task.feedback,
         "test_plan": task.test_plan,
+        "external_source": (
+            {
+                key: task.external_source.get(key)
+                for key in ("provider", "problem_id", "url", "title", "difficulty", "mode")
+            }
+            if task.external_source
+            else None
+        ),
         "status": task.status,
         "progress": task.progress,
         "result": task.result,
@@ -72,6 +87,7 @@ async def create_child_task(
         parent_task_id=source.id,
         feedback=feedback,
         test_plan=test_plan,
+        external_source=source.external_source,
         iteration_number=source.iteration_number + 1,
     )
     db.add(task)
@@ -135,6 +151,53 @@ async def create_task(
     await db.refresh(task)
     schedule_ai_task(task.id)
     return envelope({"task_id": task.id, "status": "pending"}, "task created")
+
+
+@router.post("/luogu-problem-tasks/")
+async def create_luogu_task(
+    body: LuoguTaskBody,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if await db.get(AIConfig, user.id) is None:
+        fail(400, "model configuration is required")
+    try:
+        reference = await fetch_luogu_problem(body.problem_id)
+    except LuoguProblemNotFound as exc:
+        fail(404, str(exc))
+    except LuoguFetchError as exc:
+        fail(502, str(exc))
+    reference["mode"] = body.mode
+    mode_name = "相似题" if body.mode == "similar" else "扩展题"
+    requirement = f"基于洛谷 {body.problem_id} 的考点设计一道原创{mode_name}。"
+    if body.additional_requirement:
+        requirement += f" 附加要求：{body.additional_requirement}"
+    task = AITask(
+        user_id=user.id,
+        requirement=requirement,
+        task_type=f"luogu_{body.mode}",
+        feedback=body.additional_requirement or None,
+        test_plan=body.test_plan.model_dump(),
+        external_source=reference,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    schedule_ai_task(task.id)
+    return envelope(
+        {
+            "task_id": task.id,
+            "status": task.status,
+            "reference": {
+                "problem_id": reference["problem_id"],
+                "title": reference["title"],
+                "difficulty": reference["difficulty"],
+                "url": reference["url"],
+                "mode": body.mode,
+            },
+        },
+        "Luogu reference task created",
+    )
 
 
 @router.post("/problem-tasks/{task_id}/iterations")

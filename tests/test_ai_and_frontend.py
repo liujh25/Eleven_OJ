@@ -131,6 +131,72 @@ async def test_ai_iteration_and_precision_test_plan(api, monkeypatch):
     assert "O(n log n) 与 O(n²)" in combined_prompts
 
 
+async def test_luogu_reference_authoring(api, monkeypatch):
+    await login(api, "admin", "admintestpassword")
+    await api.put(
+        "/api/ai/model-config",
+        json={"provider_url": "http://fake.test/v1", "model": "fake", "api_key": "secret"},
+    )
+    prompts: list[str] = []
+
+    async def fake_fetch(problem_id: str):
+        assert problem_id == "P1001"
+        return {
+            "provider": "luogu",
+            "problem_id": "P1001",
+            "url": "https://www.luogu.com.cn/problem/P1001",
+            "title": "A+B Problem",
+            "difficulty": "入门",
+            "background": "竞赛入门背景",
+            "description": "输入两个整数并计算结果。",
+            "input_description": "一行两个整数。",
+            "output_description": "输出一个整数。",
+            "hint": "包含负数边界。",
+            "samples": [{"input": "1 2", "output": "3"}],
+            "time_limit_ms": 1000,
+            "memory_limit_kb": 128000,
+        }
+
+    async def fake_chat(config, messages):
+        prompts.extend(message["content"] for message in messages)
+        return PROBLEM, {"prompt_tokens": 10, "completion_tokens": 5}
+
+    monkeypatch.setattr("oj.routers.ai.fetch_luogu_problem", fake_fetch)
+    monkeypatch.setattr(oj.ai_tasks, "_chat", fake_chat)
+    created = await api.post(
+        "/api/ai/luogu-problem-tasks/",
+        json={
+            "problem_id": "1001",
+            "mode": "extension",
+            "additional_requirement": "增加多次查询并保持入门难度",
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["data"]["reference"]["problem_id"] == "P1001"
+    task = await wait_for_ai(api, created.json()["data"]["task_id"])
+    assert task["status"] == "completed"
+    assert task["task_type"] == "luogu_extension"
+    assert task["external_source"] == {
+        "provider": "luogu",
+        "problem_id": "P1001",
+        "url": "https://www.luogu.com.cn/problem/P1001",
+        "title": "A+B Problem",
+        "difficulty": "入门",
+        "mode": "extension",
+    }
+    assert task["result"]["version"]["external_source"]["problem_id"] == "P1001"
+    combined = "\n".join(prompts)
+    assert "增加多次查询" in combined
+    assert "untrusted_reference_data" in combined
+    assert "不得复制" in combined
+
+    invalid = await api.post(
+        "/api/ai/luogu-problem-tasks/",
+        json={"problem_id": "https://example.com", "mode": "similar"},
+    )
+    assert invalid.status_code == 400
+
+
 async def test_ai_iteration_requires_completed_source(api, monkeypatch):
     await login(api, "admin", "admintestpassword")
     await api.put(

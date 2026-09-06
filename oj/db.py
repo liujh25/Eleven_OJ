@@ -26,6 +26,7 @@ def _migrate_existing_database(connection: Connection) -> None:
         "parent_task_id": "VARCHAR(32)",
         "feedback": "TEXT",
         "test_plan": "JSON",
+        "external_source": "JSON",
         "iteration_number": "INTEGER NOT NULL DEFAULT 0",
     }
     for name, definition in additions.items():

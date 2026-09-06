@@ -903,8 +903,8 @@ def test_plan_fields(prefix: str) -> dict:
 def ai_page() -> None:
     if not require_login():
         return
-    config_tab, author_tab, iterate_tab, task_tab, history_tab = st.tabs(
-        ["模型配置", "智能命题", "迭代改进", "任务控制台", "版本记录"]
+    config_tab, author_tab, luogu_tab, iterate_tab, task_tab, history_tab = st.tabs(
+        ["模型配置", "智能命题", "洛谷参考命题", "迭代改进", "任务控制台", "版本记录"]
     )
     with config_tab:
         st.info("模型密钥加密保存在后端，不会在查询、日志或页面中回显。")
@@ -967,6 +967,60 @@ def ai_page() -> None:
                         st.success(f"初始版本已创建：{data['task_id']}。请到“任务控制台”查看进度。")
                     except Exception as exc:
                         show_error(exc)
+    with luogu_tab:
+        st.markdown("### 根据洛谷题号创作新题")
+        st.info(
+            "输入公开题号（例如 P1001 或 1001），系统会提炼考点、难度、背景作用与边界，"
+            "再生成原创相似题或进阶扩展题。"
+        )
+        st.caption("参考题只用于抽象分析；新题会更换标题、叙事和数据设计，不直接复刻原题。")
+        st.link_button("打开洛谷题库 ↗", "https://www.luogu.com.cn/problem/list")
+        with st.form("ai-luogu-author"):
+            first, second = st.columns([1, 2])
+            luogu_problem_id = first.text_input(
+                "洛谷题号", placeholder="P1001", key="luogu-problem-id"
+            )
+            luogu_mode_label = second.radio(
+                "命题方式",
+                ["相似题", "扩展题"],
+                horizontal=True,
+                key="luogu-mode",
+            )
+            additional_requirement = st.text_area(
+                "附加要求（可选）",
+                placeholder=(
+                    "例如：保留核心考点但改成校园场景；或增加多次查询，使题目成为进阶版本。"
+                ),
+                height=110,
+            )
+            luogu_test_plan = test_plan_fields("luogu-plan")
+            if st.form_submit_button("读取参考题并开始命题", type="primary"):
+                if not luogu_test_plan["case_counts"]:
+                    st.warning("请至少为一种测试点设置数量。")
+                elif luogu_test_plan["target_count"] > 50:
+                    st.warning("所有类型合计不能超过 50 个测试点。")
+                else:
+                    try:
+                        data = client().post(
+                            "/api/ai/luogu-problem-tasks/",
+                            json={
+                                "problem_id": luogu_problem_id,
+                                "mode": (
+                                    "similar" if luogu_mode_label == "相似题" else "extension"
+                                ),
+                                "additional_requirement": additional_requirement,
+                                "test_plan": luogu_test_plan,
+                            },
+                        )
+                        st.session_state.ai_task_id = data["task_id"]
+                        reference = data["reference"]
+                        st.success(
+                            f"已读取 {reference['problem_id']} · {reference['title']}"
+                            f"（{reference['difficulty']}），命题任务：{data['task_id']}。"
+                        )
+                        st.caption("请前往“任务控制台”查看进度、Token、费用与最终题目。")
+                    except Exception as exc:
+                        show_error(exc)
     with iterate_tab:
         st.markdown("### 根据反馈继续迭代")
         st.info("上一版结果会由后端直接加入模型上下文；新版本作为子任务保存，不会覆盖旧版本。")
@@ -1018,6 +1072,8 @@ def ai_page() -> None:
                     "authoring": "初始命题",
                     "iteration": "迭代改进",
                     "test_refinement": "测试点增强",
+                    "luogu_similar": "洛谷相似题",
+                    "luogu_extension": "洛谷扩展题",
                 }
                 st.write(
                     f"**{task_names.get(task['task_type'], task['task_type'])} · "
@@ -1049,10 +1105,17 @@ def ai_page() -> None:
     with history_tab:
         try:
             tasks = client().get("/api/ai/problem-tasks/")
+            task_names = {
+                "authoring": "初始命题",
+                "iteration": "迭代改进",
+                "test_refinement": "测试点增强",
+                "luogu_similar": "洛谷相似题",
+                "luogu_extension": "洛谷扩展题",
+            }
             rows = [
                 {
                     "task_id": item["task_id"],
-                    "类型": item["task_type"],
+                    "类型": task_names.get(item["task_type"], item["task_type"]),
                     "版本": item["iteration_number"],
                     "父任务": item["parent_task_id"] or "-",
                     "status": item["status"],

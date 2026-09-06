@@ -151,3 +151,17 @@ class AIIterationBody(StrictModel):
 
 class AITestRefinementBody(StrictModel):
     test_plan: AITestPlan
+
+
+class LuoguTaskBody(StrictModel):
+    problem_id: str = Field(min_length=1, max_length=20)
+    mode: Literal["similar", "extension"] = "similar"
+    additional_requirement: str = Field(default="", max_length=3000)
+    test_plan: AITestPlan = Field(default_factory=AITestPlan)
+
+    @field_validator("problem_id")
+    @classmethod
+    def valid_problem_id(cls, value: str) -> str:
+        from oj.luogu import normalize_luogu_problem_id
+
+        return normalize_luogu_problem_id(value)

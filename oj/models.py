@@ -148,6 +148,7 @@ class AITask(Base):
     parent_task_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     test_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    external_source: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     iteration_number: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     progress: Mapped[str] = mapped_column(String(200), default="等待执行")
