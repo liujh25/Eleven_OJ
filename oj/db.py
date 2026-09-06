@@ -78,6 +78,10 @@ async def initialize_database() -> None:
                     memory_limit=128,
                 )
             )
+        if settings.seed_curated_problems:
+            from oj.starter_catalog import install_starter_catalog_once
+
+            await install_starter_catalog_once(session)
         await session.commit()
 
 

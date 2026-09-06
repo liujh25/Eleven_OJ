@@ -8,6 +8,7 @@ import pytest
 os.environ["OJ_DATABASE_URL"] = "sqlite+aiosqlite:///./tmp/test-oj.db"
 os.environ["OJ_DATA_DIR"] = "tmp/test-data"
 os.environ["OJ_EXECUTOR_ENABLED"] = "false"
+os.environ["OJ_SEED_CURATED_PROBLEMS"] = "false"
 
 from oj.app import app  # noqa: E402
 from oj.db import engine, initialize_database  # noqa: E402

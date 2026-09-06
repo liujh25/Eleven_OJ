@@ -19,6 +19,13 @@ class Base(DeclarativeBase):
     pass
 
 
+class SystemState(Base):
+    __tablename__ = "system_state"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+
+
 class User(Base):
     __tablename__ = "users"
 
