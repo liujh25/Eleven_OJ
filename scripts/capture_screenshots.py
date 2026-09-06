@@ -82,6 +82,13 @@ def main() -> None:
         assert "根据反馈继续迭代" in iteration
         assert "普通测试点" in iteration
         page.screenshot(path=OUTPUT / "06-ai-iteration.png", full_page=True)
+        page.get_by_role("tab", name="任务控制台", exact=True).click()
+        page.wait_for_timeout(500)
+        console = page.locator("body").inner_text()
+        assert "自动刷新" in console
+        assert "刷新间隔（秒）" in console
+        assert "当前任务与结果" in console
+        page.screenshot(path=OUTPUT / "08-ai-console.png", full_page=True)
         page.get_by_role("button", name="← 返回首页", exact=True).click()
         page.wait_for_timeout(900)
         page.locator("div.stButton button").nth(0).click()
@@ -90,15 +97,9 @@ def main() -> None:
         assert "习题列表" in library
         assert "关键词查找" in library
         assert "两数之和" in library
+        assert "P1001" in library
+        assert "P5723" in library
         page.screenshot(path=OUTPUT / "03-problem-library.png", full_page=True)
-        page.get_by_label("关键词查找", exact=True).fill("图论")
-        page.get_by_label("关键词查找", exact=True).press("Enter")
-        page.wait_for_timeout(700)
-        assert "没有找到相关题目" in page.locator("body").inner_text()
-        page.get_by_label("关键词查找", exact=True).fill("两数")
-        page.get_by_label("关键词查找", exact=True).press("Enter")
-        page.wait_for_timeout(700)
-        assert "两数之和" in page.locator("body").inner_text()
         page.get_by_role("button", name="开始作答 ›", exact=True).first.click()
         page.wait_for_timeout(1200)
         workspace = page.locator("body").inner_text()

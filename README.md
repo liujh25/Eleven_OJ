@@ -24,6 +24,11 @@ Python/C++ 异步评测、提交管理、用户权限、测试点日志、Stream
 可匹配题号、标题、题面、标签、难度、来源和作者，并可与标签筛选组合；点击卡片即可
 进入题目与代码评测同屏工作区，工作区顶部可返回题库。
 
+首次启动会一次性安装 16 道经重新表述的洛谷入门题（`P1001`、`P5703–P5706`、
+`P5710–P5716`、`P5720–P5723`），共 85 个自建测试点，覆盖输入输出、字符串、条件、
+日期、排序、循环、格式化与质数枚举。每题保留原题链接和“洛谷”标签，可以直接在题库中
+搜索或筛选。安装状态记录在数据库中，因此用户删除题目后不会在下次启动时被强制恢复。
+
 所有 API 路由均使用 `async def`，响应统一为 `{"code", "msg", "data"}`，HTTP
 状态码与 `code` 相同。详细设计见 [架构文档](docs/ARCHITECTURE.md)，课程要求见
 [实验二文档](https://dbg-course.github.io/python-docs/oj/)。
@@ -68,8 +73,9 @@ streamlit run frontend/app.py
 - `OJ_EXECUTOR_ENABLED`：是否自动运行提交代码。
 - `OJ_DEFAULT_TIME_LIMIT_SECONDS`、`OJ_DEFAULT_MEMORY_LIMIT_MB`：系统默认评测限制，
   默认分别为 3 秒和 128 MB。
-- `OJ_AI_TIMEOUT_SECONDS`：外部模型请求超时。
+- `OJ_AI_TIMEOUT_SECONDS`：单次外部模型请求超时，默认 300 秒。
 - `OJ_LUOGU_TIMEOUT_SECONDS`：读取洛谷公开题目页面的超时，默认 15 秒。
+- `OJ_SEED_CURATED_PROBLEMS`：是否在全新或未安装过题单的数据库中安装预置题，默认开启。
 - `OJ_API_URL`：Streamlit 使用的后端地址。
 
 运行时数据库、加密密钥、临时代码和 `.env` 都被 Git 忽略。AI 模型配置在页面中
@@ -86,6 +92,12 @@ streamlit run frontend/app.py
 样例结构后生成原创题目；不会把参考题直接导入题库。洛谷页面内容按不可信外部数据处理，
 其中出现的任何指令都不会被执行。参考来源会随 AI 版本链保留，但 API 只返回题号、标题、
 难度和链接等摘要，不回显整份参考题面。
+
+模型提供商只填写域名时，后端按 OpenAI 兼容约定自动补为 `/v1/chat/completions`；已经填写
+`/v1` 或其他自定义路径时不会重复添加。任务控制台默认每 2 秒获取一次状态、输入/输出/总
+Token 和费用，刷新间隔可在 0.5-60 秒间调整，也可以关闭自动刷新、立即刷新或随时中断任务。
+Token 数来自模型服务的 usage 字段，因此一次请求尚未返回时会暂时保持上一已确认值。
+超时、HTTP 状态错误、连接失败和无效 JSON 都会保存为可读错误，不再出现空白失败原因。
 
 ## API 示例
 
@@ -117,6 +129,12 @@ uvicorn tests.fake_provider:app --port 9000
 # 页面配置 provider URL=http://127.0.0.1:9000/v1, model=fake, api_key=anything
 ```
 
+需要手动确认或补装预置题单时，可以执行：
+
+```bash
+python -m oj.starter_catalog
+```
+
 ## 质量检查
 
 ```bash
@@ -128,7 +146,8 @@ pytest --cov=oj --cov-report=term-missing --cov-fail-under=80 -q
 
 当前测试覆盖认证和权限优先级、全部基础 CRUD、限制继承、级联删除、题目测试点可见性、
 单题按角色提交范围、独立用户统计、动态 C 注册、语言命令安全、Python/C++ 判题状态、
-提交限流与重评、日志公开和审计、洛谷页面安全解析、AI 进度/取消/费用，以及 Streamlit
+提交限流与重评、日志公开和审计、16 道预置题的参考答案复算、洛谷页面安全解析、
+AI 进度/取消/费用，以及 Streamlit
 真实浏览器冒烟。GitHub
 Actions 在 Python 3.10/3.12 的 Ubuntu 环境重复以上检查。
 
