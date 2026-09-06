@@ -4,12 +4,46 @@ import asyncio
 from pathlib import Path
 
 import httpx
+import pytest
 from streamlit.testing.v1 import AppTest
 
 import oj.ai_tasks
 from frontend.client import APIError, OJClient
+from oj.ai_tasks import AIProviderError, _chat, _completion_url
+from oj.crypto import encrypt_secret
+from oj.models import AIConfig
 from tests.conftest import login
 from tests.fake_provider import PROBLEM
+
+
+def test_openai_compatible_endpoint_normalization():
+    assert _completion_url("https://provider.example") == (
+        "https://provider.example/v1/chat/completions"
+    )
+    assert _completion_url("https://provider.example/v1/") == (
+        "https://provider.example/v1/chat/completions"
+    )
+    assert _completion_url("http://localhost:9000/custom/v2") == (
+        "http://localhost:9000/custom/v2/chat/completions"
+    )
+
+
+async def test_model_timeout_records_actionable_error():
+    def timeout(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("", request=request)
+
+    config = AIConfig(
+        user_id="timeout-test",
+        provider_url="https://provider.example",
+        model="slow-model",
+        encrypted_api_key=encrypt_secret("secret"),
+    )
+    with pytest.raises(AIProviderError, match="300 秒.*?/v1"):
+        await _chat(
+            config,
+            [{"role": "user", "content": "test"}],
+            transport=httpx.MockTransport(timeout),
+        )
 
 
 async def wait_for_ai(api, task_id: str) -> dict:

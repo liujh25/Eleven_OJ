@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     executor_enabled: bool = True
     default_time_limit_seconds: float = 3.0
     default_memory_limit_mb: int = 128
-    ai_timeout_seconds: float = 90.0
+    ai_timeout_seconds: float = 300.0
     luogu_timeout_seconds: float = 15.0
     seed_curated_problems: bool = True
     data_dir: Path = Path("data")

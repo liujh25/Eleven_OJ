@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
@@ -25,6 +26,19 @@ _TEST_STRATEGIES = {
     "adversarial": "易错对抗测试：针对常见错误算法、下标偏移、贪心误判或状态遗漏设计反例",
     "randomized": "多样性测试：选取具有代表性的混合分布数据，避免测试点结构过于单一",
 }
+
+
+class AIProviderError(RuntimeError):
+    pass
+
+
+def _completion_url(provider_url: str) -> str:
+    parsed = urlsplit(provider_url.rstrip("/"))
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/v1"
+    path = f"{path}/chat/completions"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
 def _json_content(text: str) -> dict[str, Any]:
@@ -51,7 +65,12 @@ async def _update(task_id: str, **values: Any) -> None:
             await db.commit()
 
 
-async def _chat(config: AIConfig, messages: list[dict[str, str]]) -> tuple[dict, dict]:
+async def _chat(
+    config: AIConfig,
+    messages: list[dict[str, str]],
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> tuple[dict, dict]:
     headers = {
         "Authorization": f"Bearer {decrypt_secret(config.encrypted_api_key)}",
         "Content-Type": "application/json",
@@ -62,13 +81,30 @@ async def _chat(config: AIConfig, messages: list[dict[str, str]]) -> tuple[dict,
         "temperature": 0.25,
         "response_format": {"type": "json_object"},
     }
-    timeout = httpx.Timeout(get_settings().ai_timeout_seconds)
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-        response = await client.post(
-            f"{config.provider_url.rstrip('/')}/chat/completions", headers=headers, json=payload
-        )
-        response.raise_for_status()
-        body = response.json()
+    timeout_seconds = get_settings().ai_timeout_seconds
+    timeout = httpx.Timeout(timeout_seconds)
+    endpoint = _completion_url(config.provider_url)
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=False, transport=transport
+        ) as client:
+            response = await client.post(endpoint, headers=headers, json=payload)
+            response.raise_for_status()
+            body = response.json()
+    except httpx.TimeoutException as exc:
+        raise AIProviderError(
+            f"模型服务在 {timeout_seconds:g} 秒内未返回结果。请检查服务负载、模型名称和提供商地址；"
+            "OpenAI 兼容地址通常以 /v1 结尾。"
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise AIProviderError(
+            f"模型服务返回 HTTP {exc.response.status_code}。"
+            "请检查 API Key、模型名称、账户余额和提供商地址。"
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise AIProviderError("无法连接模型服务，请检查提供商地址、网络和 TLS 配置。") from exc
+    except (ValueError, TypeError) as exc:
+        raise AIProviderError("模型服务返回的响应不是有效 JSON。") from exc
     content = body["choices"][0]["message"]["content"]
     return _json_content(content), body.get("usage") or {}
 
@@ -276,7 +312,7 @@ async def run_ai_task(task_id: str) -> None:
         await _update(task_id, status="cancelled", progress="任务已中断", error=None)
         raise
     except Exception as exc:
-        message = str(exc)
+        message = str(exc) or type(exc).__name__
         message = re.sub(r"Bearer\s+\S+", "Bearer [redacted]", message)
         await _update(task_id, status="failed", progress="命题失败", error=message[:500])
     finally:

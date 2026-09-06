@@ -851,6 +851,15 @@ AI_TEST_STRATEGIES = {
     "randomized": ("多样数据测试点", "不同分布与组合形态，降低数据单一性"),
 }
 
+AI_TASK_NAMES = {
+    "authoring": "初始命题",
+    "iteration": "迭代改进",
+    "test_refinement": "测试点增强",
+    "luogu_similar": "洛谷相似题",
+    "luogu_extension": "洛谷扩展题",
+}
+AI_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+
 
 def test_plan_fields(prefix: str) -> dict:
     defaults = {
@@ -900,6 +909,65 @@ def test_plan_fields(prefix: str) -> dict:
     }
 
 
+def ai_task_live_panel(task_id: str, refresh_seconds: float, auto_refresh: bool) -> None:
+    @st.fragment(
+        run_every=refresh_seconds if auto_refresh and task_id else None,
+        key="ai-task-live-fragment",
+    )
+    def live_panel() -> None:
+        if not task_id:
+            st.info("创建任务或输入任务 ID 后，这里会显示实时状态。")
+            return
+        try:
+            task = client().get(f"/api/ai/problem-tasks/{task_id}")
+        except Exception as exc:
+            show_error(exc)
+            return
+
+        status = task["status"]
+        st.write(
+            f"**{AI_TASK_NAMES.get(task['task_type'], task['task_type'])} · "
+            f"第 {task['iteration_number']} 版 · {status}** · {task['progress']}"
+        )
+        st.caption(
+            f"最近刷新：{time.strftime('%H:%M:%S')} · "
+            f"{'自动刷新中' if auto_refresh else '自动刷新已关闭'}"
+        )
+        if task.get("parent_task_id"):
+            st.caption(f"父任务：{task['parent_task_id']}")
+        u1, u2, u3, u4 = st.columns(4)
+        u1.metric("输入 Token", task["usage"]["input_tokens"])
+        u2.metric("输出 Token", task["usage"]["output_tokens"])
+        u3.metric("总 Token", task["usage"]["total_tokens"])
+        u4.metric("费用 USD", f"{task['usage']['cost']:.8f}")
+        st.caption("Token 为模型服务已确认的用量；单次请求完成前可能暂时保持不变。")
+
+        action1, action2 = st.columns(2)
+        action1.button("立即刷新", key="ai-refresh-now", width="stretch")
+        if action2.button(
+            "中断任务",
+            key="ai-cancel-live",
+            width="stretch",
+            disabled=status in AI_TERMINAL_STATUSES,
+        ):
+            try:
+                client().put(f"/api/ai/problem-tasks/{task_id}/cancel")
+                st.warning("已发送中断请求，下一次刷新将显示最终状态。")
+            except Exception as exc:
+                show_error(exc)
+
+        if task.get("error"):
+            st.error(task["error"])
+        elif status == "failed":
+            st.error("该任务由旧版本执行，未保存具体错误；请重新创建任务以获得详细诊断。")
+        if task.get("result"):
+            st.json(task["result"])
+            st.session_state.ai_result = task["result"]
+            st.session_state.ai_task_id = task_id
+
+    live_panel()
+
+
 def ai_page() -> None:
     if not require_login():
         return
@@ -908,6 +976,10 @@ def ai_page() -> None:
     )
     with config_tab:
         st.info("模型密钥加密保存在后端，不会在查询、日志或页面中回显。")
+        st.caption(
+            "只填写域名时会自动使用标准 /v1/chat/completions；填写自定义路径时会保留该路径。"
+            "复杂命题单次模型请求默认最多等待 300 秒。"
+        )
         with st.form("ai-config"):
             provider_url = st.text_input("提供商 URL", placeholder="https://provider.example/v1")
             model = st.text_input("模型名称")
@@ -1064,58 +1136,27 @@ def ai_page() -> None:
         task_id = st.text_input(
             "当前任务 ID", value=st.session_state.get("ai_task_id", ""), key="task-console-id"
         )
-        c1, c2 = st.columns(2)
-        if c1.button("刷新进度", disabled=not task_id):
-            try:
-                task = client().get(f"/api/ai/problem-tasks/{task_id}")
-                task_names = {
-                    "authoring": "初始命题",
-                    "iteration": "迭代改进",
-                    "test_refinement": "测试点增强",
-                    "luogu_similar": "洛谷相似题",
-                    "luogu_extension": "洛谷扩展题",
-                }
-                st.write(
-                    f"**{task_names.get(task['task_type'], task['task_type'])} · "
-                    f"第 {task['iteration_number']} 版 · {task['status']}** · {task['progress']}"
-                )
-                if task.get("parent_task_id"):
-                    st.caption(f"父任务：{task['parent_task_id']}")
-                u1, u2, u3 = st.columns(3)
-                u1.metric("输入 Token", task["usage"]["input_tokens"])
-                u2.metric("输出 Token", task["usage"]["output_tokens"])
-                u3.metric("费用 USD", f"{task['usage']['cost']:.8f}")
-                if task.get("error"):
-                    st.error(task["error"])
-                if task.get("result"):
-                    st.json(task["result"])
-                    st.session_state.ai_result = task["result"]
-                    st.session_state.ai_task_id = task_id
-            except Exception as exc:
-                show_error(exc)
-        if c2.button("中断任务", disabled=not task_id):
-            try:
-                client().put(f"/api/ai/problem-tasks/{task_id}/cancel")
-                st.warning("任务已中断")
-            except Exception as exc:
-                show_error(exc)
+        refresh1, refresh2 = st.columns(2)
+        auto_refresh = refresh1.toggle("自动刷新", value=True, key="ai-auto-refresh")
+        refresh_seconds = refresh2.number_input(
+            "刷新间隔（秒）",
+            min_value=0.5,
+            max_value=60.0,
+            value=2.0,
+            step=0.5,
+            key="ai-refresh-seconds",
+        )
+        ai_task_live_panel(task_id, float(refresh_seconds), auto_refresh)
         if st.session_state.get("ai_result") and st.button("导入题目新增表单"):
             st.session_state.ai_problem = st.session_state.ai_result["problem"]
             st.success("已导入。请前往“题目与评测 → 题目管理 → 新增题目”审阅并保存。")
     with history_tab:
         try:
             tasks = client().get("/api/ai/problem-tasks/")
-            task_names = {
-                "authoring": "初始命题",
-                "iteration": "迭代改进",
-                "test_refinement": "测试点增强",
-                "luogu_similar": "洛谷相似题",
-                "luogu_extension": "洛谷扩展题",
-            }
             rows = [
                 {
                     "task_id": item["task_id"],
-                    "类型": task_names.get(item["task_type"], item["task_type"]),
+                    "类型": AI_TASK_NAMES.get(item["task_type"], item["task_type"]),
                     "版本": item["iteration_number"],
                     "父任务": item["parent_task_id"] or "-",
                     "status": item["status"],

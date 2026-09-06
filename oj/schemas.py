@@ -91,8 +91,16 @@ class AIConfigBody(StrictModel):
     @classmethod
     def valid_provider_url(cls, value: str) -> str:
         parsed = urlparse(value)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username:
-            raise ValueError("provider_url must be an http(s) URL without credentials")
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(
+                "provider_url must be an http(s) base URL without credentials, query or fragment"
+            )
         return value.rstrip("/")
 
 
