@@ -440,3 +440,115 @@ def test_streamlit_app_smoke():
     assert any(button.label == "← 返回首页" for button in app.button)
     next(button for button in app.button if button.label == "← 返回首页").click().run()
     assert any("习题与评测" in button.label for button in app.button)
+
+
+def test_ai_console_previews_and_directly_imports_problem():
+    imported: list[dict] = []
+    task = {
+        "task_id": "task-preview",
+        "task_type": "authoring",
+        "parent_task_id": None,
+        "iteration_number": 0,
+        "status": "completed",
+        "progress": "命题完成，可导入题目表单",
+        "usage": {
+            "input_tokens": 120,
+            "output_tokens": 80,
+            "total_tokens": 200,
+            "cost": 0.0,
+        },
+        "error": None,
+        "result": PROBLEM,
+    }
+
+    def ok(data):
+        return httpx.Response(200, json={"code": 200, "msg": "ok", "data": data})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "POST" and path == "/api/problems/":
+            imported.append(__import__("json").loads(request.content))
+            return ok(imported[-1])
+        if path == "/api/problems/":
+            return ok(imported)
+        if path == "/api/problems/ai_sum":
+            return ok(PROBLEM["problem"])
+        if path == "/api/languages/":
+            return ok({"name": ["python"]})
+        if path == "/api/submissions/":
+            return ok({"total": 0, "submissions": []})
+        if path == "/api/ai/problem-tasks/task-preview":
+            return ok(task)
+        if path == "/api/ai/problem-tasks/":
+            return ok([task])
+        raise AssertionError(f"unexpected request: {request.method} {path}")
+
+    oj_client = OJClient("http://test")
+    oj_client.client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://test"
+    )
+    app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
+    app.session_state["user"] = {"username": "admin", "user_id": "admin", "role": "admin"}
+    app.session_state["nav_page"] = "AI 智能命题"
+    app.session_state["ai_task_id"] = "task-preview"
+    app.session_state["api"] = oj_client
+    app.run(timeout=20)
+    assert not app.exception
+    assert any("AI 新题可视化" in item.value for item in app.markdown)
+    labels = {button.label for button in app.button}
+    assert "导入题库并立即打开" in labels
+    assert "载入题目管理表单" in labels
+
+    next(button for button in app.button if button.label == "导入题库并立即打开").click().run()
+    assert not app.exception
+    assert imported == [PROBLEM["problem"]]
+    assert app.session_state["nav_page"] == "题目与评测"
+    assert app.session_state["workspace_problem"] == "ai_sum"
+    assert any("ai_sum · 边界两数之和" in item.value for item in app.subheader)
+
+    imported.clear()
+    review_app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
+    review_app.session_state["user"] = {
+        "username": "admin",
+        "user_id": "admin",
+        "role": "admin",
+    }
+    review_app.session_state["nav_page"] = "AI 智能命题"
+    review_app.session_state["ai_task_id"] = "task-preview"
+    review_app.session_state["api"] = oj_client
+    review_app.run(timeout=20)
+    next(
+        button for button in review_app.button if button.label == "载入题目管理表单"
+    ).click().run()
+    assert not review_app.exception
+    assert review_app.session_state["nav_page"] == "题目与评测"
+    assert review_app.session_state["workspace_view"] == "manage"
+    assert any(button.label == "保存题目" for button in review_app.button)
+    next(button for button in review_app.button if button.label == "保存题目").click().run()
+    assert not review_app.exception
+    assert imported == [PROBLEM["problem"]]
+    assert review_app.session_state["workspace_view"] == "judge"
+
+
+def test_problem_library_exposes_admin_management_actions():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/problems/":
+            return httpx.Response(
+                200, json={"code": 200, "msg": "ok", "data": [PROBLEM["problem"]]}
+            )
+        raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
+
+    oj_client = OJClient("http://test")
+    oj_client.client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="http://test"
+    )
+    app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
+    app.session_state["user"] = {"username": "admin", "user_id": "admin", "role": "admin"}
+    app.session_state["nav_page"] = "题目与评测"
+    app.session_state["workspace_view"] = "library"
+    app.session_state["api"] = oj_client
+    app.run(timeout=20)
+    assert not app.exception
+    labels = {button.label for button in app.button}
+    assert "＋ 新增题目" in labels
+    assert "⚙ 管理题库" in labels

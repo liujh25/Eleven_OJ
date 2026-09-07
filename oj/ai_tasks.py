@@ -420,6 +420,10 @@ async def run_ai_task(task_id: str) -> None:
             "problem": validated.model_dump(),
             "coverage": final.get("coverage", []),
             "notes": notes,
+            "review": {
+                "status": "fallback" if review_warning else "passed",
+                "warning": review_warning or None,
+            },
             "version": {
                 "task_type": task_type,
                 "parent_task_id": task.parent_task_id,

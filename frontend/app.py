@@ -73,6 +73,18 @@ def show_judge_workspace() -> None:
     st.session_state.workspace_view = "judge"
 
 
+def show_problem_management(mode: str = "overview") -> None:
+    st.session_state.workspace_view = "manage"
+    st.session_state.problem_management_mode = mode
+
+
+def stage_ai_problem(problem: dict) -> None:
+    st.session_state.ai_problem = problem
+    st.session_state.problem_management_mode = "create"
+    st.session_state.workspace_view = "manage"
+    st.session_state.nav_page = "题目与评测"
+
+
 def client() -> OJClient:
     if "api" not in st.session_state:
         st.session_state.api = OJClient()
@@ -551,18 +563,40 @@ def render_submission_result(submission_id: str, auto_refresh: bool = False) -> 
 
 
 def problem_management(items: list[dict]) -> None:
-    overview_tab, create_tab, edit_tab = st.tabs(["题库概览", "新增题目", "编辑题目"])
+    staged_problem = st.session_state.get("ai_problem")
+    create_first = bool(staged_problem) or st.session_state.get(
+        "problem_management_mode"
+    ) == "create"
+    labels = (
+        ["新增题目", "题库概览", "编辑题目"]
+        if create_first
+        else ["题库概览", "新增题目", "编辑题目"]
+    )
+    sections = dict(zip(labels, st.tabs(labels), strict=True))
+    overview_tab = sections["题库概览"]
+    create_tab = sections["新增题目"]
+    edit_tab = sections["编辑题目"]
     with overview_tab:
         if items:
             st.dataframe(items, width="stretch", hide_index=True)
         else:
             st.info("题库为空，请新增第一道题。")
     with create_tab:
+        if staged_problem:
+            st.success(
+                f"已载入 AI 题目：{staged_problem['id']} · {staged_problem['title']}。"
+                "请审阅后点击保存，保存成功会自动打开新题。"
+            )
         try:
-            payload = problem_payload("create", st.session_state.pop("ai_problem", None))
+            form_suffix = f"ai-{staged_problem['id']}" if staged_problem else "manual"
+            payload = problem_payload(f"create-{form_suffix}", staged_problem)
             if payload:
                 client().post("/api/problems/", json=payload)
-                st.success("题目已新增")
+                st.session_state.pop("ai_problem", None)
+                st.session_state.problem_management_mode = "overview"
+                st.session_state.workspace_problem = payload["id"]
+                st.session_state.workspace_view = "judge"
+                st.session_state.problem_notice = f"题目 {payload['id']} 已新增并进入题库。"
                 st.rerun()
         except Exception as exc:
             show_error(exc)
@@ -608,6 +642,26 @@ def problem_library_page(all_problems: list[dict]) -> None:
         """,
         unsafe_allow_html=True,
     )
+    user = st.session_state.get("user") or {}
+    if user.get("role") == "admin":
+        st.markdown("#### 管理员题库控制台")
+        create_column, manage_column, status_column = st.columns([1.2, 1.2, 3])
+        create_column.button(
+            "＋ 新增题目",
+            key="library-create-problem",
+            type="primary",
+            width="stretch",
+            on_click=show_problem_management,
+            args=("create",),
+        )
+        manage_column.button(
+            "⚙ 管理题库",
+            key="library-manage-problems",
+            width="stretch",
+            on_click=show_problem_management,
+            args=("overview",),
+        )
+        status_column.info(f"当前题库共 {len(all_problems)} 道题，可在此新增、编辑或删除。")
     all_tags = sorted({tag for item in all_problems for tag in item.get("tags", [])})
     search_column, tag_column, action_column = st.columns([3, 1.4, 1.1])
     keyword = search_column.text_input(
@@ -681,23 +735,45 @@ def workspace_page() -> None:
     except Exception as exc:
         show_error(exc)
         return
-    if st.session_state.get("workspace_view", "library") == "library":
+    workspace_view = st.session_state.get("workspace_view", "library")
+    if workspace_view == "library":
         problem_library_page(all_problems)
         return
 
-    st.button(
-        "← 返回题目列表",
-        key="back-problem-library",
-        on_click=show_problem_library,
+    if workspace_view == "manage":
+        st.button(
+            "← 返回题目列表",
+            key="back-library-from-management",
+            on_click=show_problem_library,
+        )
+        if user["role"] != "admin":
+            st.warning("只有管理员可以新增、编辑或删除题目。")
+            return
+        st.markdown("### 题目管理")
+        st.caption("新增题目保存后会立即进入题库，并自动打开题目与评测页面。")
+        problem_management(all_problems)
+        return
+
+    nav_left, nav_right = st.columns([4, 1])
+    nav_left.button(
+        "← 返回题目列表", key="back-problem-library", on_click=show_problem_library
     )
+    if user["role"] == "admin":
+        nav_right.button(
+            "⚙ 题目管理",
+            key="judge-problem-management",
+            width="stretch",
+            on_click=show_problem_management,
+            args=("overview",),
+        )
+    if notice := st.session_state.pop("problem_notice", None):
+        st.success(notice)
     try:
         languages = client().get("/api/languages/")["name"]
     except Exception as exc:
         show_error(exc)
         return
     tab_names = ["在线做题", "提交记录", "结果详情", "语言配置"]
-    if user["role"] == "admin":
-        tab_names.append("题目管理")
     tabs = st.tabs(tab_names)
     with tabs[0]:
         try:
@@ -835,11 +911,6 @@ def workspace_page() -> None:
                     show_error(exc)
         st.markdown("#### 当前可用语言")
         st.write("、".join(languages))
-    if user["role"] == "admin":
-        with tabs[4]:
-            problem_management(all_problems)
-
-
 AI_TEST_STRATEGIES = {
     "basic": ("简单测试点", "样例附近的小规模输入，用于发现基础实现错误"),
     "normal": ("普通测试点", "约束中段的典型数据，用于检验完整算法逻辑"),
@@ -909,6 +980,108 @@ def test_plan_fields(prefix: str) -> dict:
     }
 
 
+def render_ai_problem_result(task_id: str, result: dict) -> None:
+    problem = result.get("problem")
+    if not isinstance(problem, dict):
+        st.warning("模型结果中缺少可预览的题目结构。")
+        st.json(result)
+        return
+
+    st.markdown("### AI 新题可视化")
+    metric1, metric2, metric3, metric4 = st.columns(4)
+    metric1.metric("题目 ID", problem.get("id", "-"))
+    metric2.metric("难度", problem.get("difficulty") or "未设置")
+    metric3.metric("测试点", len(problem.get("testcases") or []))
+    metric4.metric(
+        "资源限制",
+        f"{problem.get('time_limit', '-')}s / {problem.get('memory_limit', '-')}MB",
+    )
+
+    statement_tab, testcase_tab, design_tab, raw_tab = st.tabs(
+        ["题面预览", "测试点预览", "测试设计", "原始数据"]
+    )
+    with statement_tab:
+        render_problem_statement(problem)
+    with testcase_tab:
+        testcases = problem.get("testcases") or []
+        if not testcases:
+            st.info("该题暂时没有测试点。")
+        else:
+            rows = [
+                {
+                    "序号": index,
+                    "输入": case.get("input", ""),
+                    "预期输出": case.get("output", ""),
+                    "输入字符数": len(case.get("input", "")),
+                }
+                for index, case in enumerate(testcases, start=1)
+            ]
+            st.dataframe(rows, width="stretch", hide_index=True)
+            for index, case in enumerate(testcases, start=1):
+                with st.expander(f"测试点 {index} · 完整输入输出"):
+                    input_column, output_column = st.columns(2)
+                    input_column.code(case.get("input", ""), language=None)
+                    output_column.code(case.get("output", ""), language=None)
+    with design_tab:
+        coverage = result.get("coverage")
+        st.markdown("#### 覆盖说明")
+        if isinstance(coverage, list):
+            for item in coverage:
+                st.markdown(f"- {item}")
+        elif coverage:
+            st.markdown(str(coverage))
+        else:
+            st.info("模型未提供测试覆盖说明。")
+        if notes := result.get("notes"):
+            st.markdown("#### 生成备注")
+            st.info(str(notes))
+        if plan := result.get("test_plan"):
+            st.markdown("#### 测试点配置")
+            st.json(plan)
+    with raw_tab:
+        st.json(result)
+
+    user = st.session_state.get("user") or {}
+    if user.get("role") != "admin":
+        st.info("题目预览已生成。只有管理员可以将 AI 题目写入正式题库。")
+        return
+
+    review = result.get("review") or {}
+    requires_manual_review = review.get("status") == "fallback" or (
+        "已保留通过结构校验的草稿" in str(result.get("notes") or "")
+    )
+    if requires_manual_review:
+        st.warning("该结果使用了已校验草稿回退，请先载入题目管理表单并人工审阅测试点。")
+    direct_column, review_column = st.columns(2)
+    if direct_column.button(
+        "导入题库并立即打开",
+        key=f"ai-direct-import-{task_id}",
+        type="primary",
+        width="stretch",
+        disabled=requires_manual_review,
+    ):
+        try:
+            client().post("/api/problems/", json=problem)
+            st.session_state.pop("ai_problem", None)
+            st.session_state.problem_notice = f"AI 题目 {problem['id']} 已导入正式题库。"
+            st.session_state.workspace_problem = problem["id"]
+            st.session_state.workspace_view = "judge"
+            st.session_state.nav_page = "题目与评测"
+            st.rerun()
+        except Exception as exc:
+            show_error(exc)
+    if review_column.button(
+        "载入题目管理表单",
+        key=f"ai-stage-import-{task_id}",
+        width="stretch",
+    ):
+        stage_ai_problem(problem)
+        st.rerun()
+    st.caption(
+        "复核通过的结果可直接导入；载入表单可在保存前继续修改题面和测试点。"
+    )
+
+
 def ai_task_live_panel(task_id: str, refresh_seconds: float, auto_refresh: bool) -> None:
     @st.fragment(
         run_every=refresh_seconds if auto_refresh and task_id else None,
@@ -961,9 +1134,9 @@ def ai_task_live_panel(task_id: str, refresh_seconds: float, auto_refresh: bool)
         elif status == "failed":
             st.error("该任务由旧版本执行，未保存具体错误；请重新创建任务以获得详细诊断。")
         if task.get("result"):
-            st.json(task["result"])
             st.session_state.ai_result = task["result"]
             st.session_state.ai_task_id = task_id
+            render_ai_problem_result(task_id, task["result"])
 
     live_panel()
 
@@ -1181,9 +1354,6 @@ def ai_page() -> None:
             key="ai-refresh-seconds",
         )
         ai_task_live_panel(task_id, float(refresh_seconds), auto_refresh)
-        if st.session_state.get("ai_result") and st.button("导入题目新增表单"):
-            st.session_state.ai_problem = st.session_state.ai_result["problem"]
-            st.success("已导入。请前往“题目与评测 → 题目管理 → 新增题目”审阅并保存。")
     with history_tab:
         try:
             tasks = client().get("/api/ai/problem-tasks/")
