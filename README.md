@@ -76,12 +76,17 @@ streamlit run frontend/app.py
 - `OJ_DEFAULT_TIME_LIMIT_SECONDS`、`OJ_DEFAULT_MEMORY_LIMIT_MB`：系统默认评测限制，
   默认分别为 3 秒和 128 MB。
 - `OJ_AI_TIMEOUT_SECONDS`：单次外部模型请求超时，默认 300 秒。
+- `OJ_AI_MAX_OUTPUT_TOKENS`：单次结构化命题输出上限，默认 24000 Token。
 - `OJ_LUOGU_TIMEOUT_SECONDS`：读取洛谷公开题目页面的超时，默认 15 秒。
 - `OJ_SEED_CURATED_PROBLEMS`：是否在全新或未安装过题单的数据库中安装预置题，默认开启。
 - `OJ_API_URL`：Streamlit 使用的后端地址。
 
 运行时数据库、加密密钥、临时代码和 `.env` 都被 Git 忽略。AI 模型配置在页面中
 按用户填写；API Key 使用本地 Fernet 密钥加密，接口和日志不会回显密钥。
+使用 DeepSeek 官方地址 `https://api.deepseek.com` 时，系统会关闭其默认高强度思考模式，
+并对无效 JSON 自动重试一次。题目草稿会先独立完成严格结构校验；复核响应若截断或结构退化，
+系统保留已验证草稿并在生成备注中记录降级原因。常见的毫秒时间限制和字节/KB 内存限制会在
+严格校验前安全换算为秒和 MB。
 
 “智能命题”和“迭代改进”表单均内置测试点配额列表，可分别设置简单、普通、边界、
 时间限制、特殊情形、溢出、易错对抗和多样数据测试点的数量，填 0 即不生成该类型。

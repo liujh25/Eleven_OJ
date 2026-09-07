@@ -9,7 +9,7 @@ from streamlit.testing.v1 import AppTest
 
 import oj.ai_tasks
 from frontend.client import APIError, OJClient
-from oj.ai_tasks import AIProviderError, _chat, _completion_url
+from oj.ai_tasks import AIProviderError, _chat, _completion_url, _normalize_problem_units
 from oj.crypto import encrypt_secret
 from oj.models import AIConfig
 from tests.conftest import login
@@ -28,6 +28,16 @@ def test_openai_compatible_endpoint_normalization():
     )
 
 
+def test_ai_problem_limit_units_are_normalized():
+    assert _normalize_problem_units({"time_limit": 1000, "memory_limit": 128}) == {
+        "time_limit": 1.0,
+        "memory_limit": 128,
+    }
+    assert _normalize_problem_units(
+        {"time_limit": 3000, "memory_limit": 128 * 1024 * 1024}
+    ) == {"time_limit": 3.0, "memory_limit": 128}
+
+
 async def test_model_timeout_records_actionable_error():
     def timeout(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("", request=request)
@@ -44,6 +54,99 @@ async def test_model_timeout_records_actionable_error():
             [{"role": "user", "content": "test"}],
             transport=httpx.MockTransport(timeout),
         )
+
+
+async def test_deepseek_request_disables_default_thinking(monkeypatch):
+    captured: dict = {}
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        captured.update(__import__("json").loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"problem": {}}'}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            },
+        )
+
+    config = AIConfig(
+        user_id="deepseek-test",
+        provider_url="https://api.deepseek.com",
+        model="deepseek-v4-flash",
+        encrypted_api_key=encrypt_secret("secret"),
+    )
+    monkeypatch.setattr(oj.ai_tasks, "_json_content", lambda content: {"ok": True})
+    result, usage = await _chat(
+        config,
+        [{"role": "user", "content": "test"}],
+        transport=httpx.MockTransport(answer),
+    )
+    assert result == {"ok": True}
+    assert usage == {"prompt_tokens": 3, "completion_tokens": 2}
+    assert captured["thinking"] == {"type": "disabled"}
+    assert captured["max_tokens"] == 24_000
+
+
+async def test_invalid_provider_json_is_retried_and_usage_is_aggregated():
+    calls = 0
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        content = '{"value": Array.from({length: 10})}' if calls == 1 else '{"ok": true}'
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"finish_reason": "stop", "message": {"content": content}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+            },
+        )
+
+    config = AIConfig(
+        user_id="retry-test",
+        provider_url="https://provider.example/v1",
+        model="model",
+        encrypted_api_key=encrypt_secret("secret"),
+    )
+    result, usage = await _chat(
+        config,
+        [{"role": "user", "content": "return json"}],
+        transport=httpx.MockTransport(answer),
+    )
+    assert calls == 2
+    assert result == {"ok": True}
+    assert usage == {"prompt_tokens": 6, "completion_tokens": 4}
+
+
+async def test_invalid_provider_json_error_keeps_consumed_usage():
+    def answer(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": '{"value": Array.from([])}'},
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 7},
+            },
+        )
+
+    config = AIConfig(
+        user_id="failed-usage-test",
+        provider_url="https://provider.example/v1",
+        model="model",
+        encrypted_api_key=encrypt_secret("secret"),
+    )
+    with pytest.raises(AIProviderError) as caught:
+        await _chat(
+            config,
+            [{"role": "user", "content": "return json"}],
+            transport=httpx.MockTransport(answer),
+        )
+    assert caught.value.input_tokens == 10
+    assert caught.value.output_tokens == 14
 
 
 async def wait_for_ai(api, task_id: str) -> dict:
@@ -93,6 +196,33 @@ async def test_ai_progress_usage_and_result(api, monkeypatch):
     }
     profile = (await api.get(f"/api/users/{admin['user_id']}")).json()["data"]
     assert profile["ai_problem_count"] == 1
+
+
+async def test_ai_review_failure_keeps_validated_draft(api, monkeypatch):
+    await login(api, "admin", "admintestpassword")
+    await api.put(
+        "/api/ai/model-config",
+        json={"provider_url": "http://fake.test/v1", "model": "fake", "api_key": "secret"},
+    )
+    calls = 0
+
+    async def fake_chat(config, messages):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise AIProviderError("review output was truncated")
+        return PROBLEM, {"prompt_tokens": 20, "completion_tokens": 10}
+
+    monkeypatch.setattr(oj.ai_tasks, "_chat", fake_chat)
+    created = await api.post(
+        "/api/ai/problem-tasks/",
+        json={"requirement": "设计一道复核异常时仍能保留有效草稿的题目"},
+    )
+    task = await wait_for_ai(api, created.json()["data"]["task_id"])
+    assert task["status"] == "completed"
+    assert task["usage"]["total_tokens"] == 30
+    assert task["result"]["problem"]["id"] == "ai_sum"
+    assert "已保留通过结构校验的草稿" in task["result"]["notes"]
 
 
 async def test_ai_iteration_and_precision_test_plan(api, monkeypatch):
