@@ -13,3 +13,4 @@ tmp/
 *.db
 *.sqlite3
 output/pdf/rendered/
+output/pdf/async_oj_acceptance_guide.pdf
