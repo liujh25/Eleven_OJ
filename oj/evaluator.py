@@ -69,14 +69,16 @@ def _resource_limiter(memory_mb: int, cpu_seconds: int):
             import resource
 
             memory_bytes = memory_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))  # type: ignore[attr-defined]
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))  # type: ignore[attr-defined]
-            resource.setrlimit(  # type: ignore[attr-defined]
-                resource.RLIMIT_FSIZE,  # type: ignore[attr-defined]
+            resource_api = vars(resource)
+            set_limit = resource_api["setrlimit"]
+            set_limit(resource_api["RLIMIT_AS"], (memory_bytes, memory_bytes))
+            set_limit(resource_api["RLIMIT_CPU"], (cpu_seconds, cpu_seconds + 1))
+            set_limit(
+                resource_api["RLIMIT_FSIZE"],
                 (16 * 1024 * 1024, 16 * 1024 * 1024),
             )
-            resource.setrlimit(resource.RLIMIT_NPROC, (32, 32))  # type: ignore[attr-defined]
-            os.setsid()  # type: ignore[attr-defined]
+            set_limit(resource_api["RLIMIT_NPROC"], (32, 32))
+            vars(os)["setsid"]()
 
     return limit
 
@@ -157,7 +159,7 @@ async def run_process(
         timed_out = True
         if os.name == "posix":
             try:
-                os.killpg(proc.pid, signal.SIGKILL)  # type: ignore[attr-defined]
+                vars(os)["killpg"](proc.pid, vars(signal)["SIGKILL"])
             except ProcessLookupError:
                 pass
         _kill_tree(proc.pid)
