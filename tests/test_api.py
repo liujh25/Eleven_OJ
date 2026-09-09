@@ -111,6 +111,25 @@ async def test_problem_defaults_and_testcases_visible_to_normal_user(api):
         assert stored.memory_limit == 0
 
 
+async def test_normal_user_can_create_and_edit_problem_but_only_admin_can_delete(api):
+    registered = await api.post("/api/users/", json={"username": "alice", "password": "secret1"})
+    assert registered.status_code == 200
+    await login(api, "alice", "secret1")
+
+    body = problem_body("community_problem")
+    assert (await api.post("/api/problems/", json=body)).status_code == 200
+    body["title"] = "普通用户修改后的题目"
+    updated = await api.put("/api/problems/community_problem", json=body)
+    assert updated.status_code == 200
+    detail = (await api.get("/api/problems/community_problem")).json()["data"]
+    assert detail["title"] == "普通用户修改后的题目"
+    assert (await api.delete("/api/problems/community_problem")).status_code == 403
+
+    api.cookies.clear()
+    await login(api, "admin", "admintestpassword")
+    assert (await api.delete("/api/problems/community_problem")).status_code == 200
+
+
 async def test_language_registry_and_auth_precedence(api):
     invalid_without_login = await api.post("/api/problems/", json={})
     assert invalid_without_login.status_code == 401
@@ -269,9 +288,11 @@ async def test_logs_visibility_and_access_audit(api):
     await api.post("/api/problems/", json=problem_body())
     registered = await api.post("/api/users/", json={"username": "alice", "password": "secret1"})
     alice_id = registered.json()["data"]["user_id"]
+    other = await api.post("/api/users/", json={"username": "bobby", "password": "secret1"})
+    other_id = other.json()["data"]["user_id"]
     async with SessionFactory() as db:
         item = Submission(
-            user_id="admin",
+            user_id=alice_id,
             problem_id="sum_2",
             language="python",
             code="print(3)",
@@ -287,19 +308,28 @@ async def test_logs_visibility_and_access_audit(api):
 
     api.cookies.clear()
     await login(api, "alice", "secret1")
+    owner_private = await api.get(f"/api/submissions/{submission_id}/log")
+    assert owner_private.status_code == 200
+    assert owner_private.json()["data"] == {"details": [], "score": 10, "counts": 20}
+
+    api.cookies.clear()
+    await login(api, "bobby", "secret1")
     denied = await api.get(f"/api/submissions/{submission_id}/log")
     assert denied.status_code == 403
+
     api.cookies.clear()
     await login(api, "admin", "admintestpassword")
+    admin_private = await api.get(f"/api/submissions/{submission_id}/log")
+    assert admin_private.json()["data"]["details"][0]["result"] == "AC"
     visible = await api.put("/api/problems/sum_2/log_visibility", json={"public_cases": True})
     assert visible.status_code == 200
     api.cookies.clear()
-    await login(api, "alice", "secret1")
+    await login(api, "bobby", "secret1")
     allowed = await api.get(f"/api/submissions/{submission_id}/log")
     assert allowed.json()["data"]["details"][0]["result"] == "AC"
     api.cookies.clear()
     await login(api, "admin", "admintestpassword")
-    audits = await api.get("/api/logs/access/", params={"user_id": alice_id})
+    audits = await api.get("/api/logs/access/", params={"user_id": other_id})
     assert {entry["status"] for entry in audits.json()["data"]} == {"200", "403"}
     assert {entry["action"] for entry in audits.json()["data"]} == {"view_logs"}
 

@@ -24,7 +24,9 @@ async def submission_log(
     problem = await db.get(Problem, submission.problem_id)
     if problem is None:
         fail(404, "problem not found")
-    allowed = user.role == "admin" or submission.user_id == user.id or problem.public_cases
+    is_admin = user.role == "admin"
+    is_owner = submission.user_id == user.id
+    allowed = is_admin or is_owner or problem.public_cases
     db.add(
         AccessAudit(
             user_id=user.id,
@@ -37,22 +39,24 @@ async def submission_log(
     await db.commit()
     if not allowed:
         fail(403, "permission denied")
-    results = (
-        await db.scalars(
-            select(TestCaseResult)
-            .where(TestCaseResult.submission_id == submission.id)
-            .order_by(TestCaseResult.case_number)
-        )
-    ).all()
-    details = [
-        {
-            "id": item.case_number,
-            "result": item.result,
-            "time": item.time,
-            "memory": item.memory,
-        }
-        for item in results
-    ]
+    details = []
+    if is_admin or problem.public_cases:
+        results = (
+            await db.scalars(
+                select(TestCaseResult)
+                .where(TestCaseResult.submission_id == submission.id)
+                .order_by(TestCaseResult.case_number)
+            )
+        ).all()
+        details = [
+            {
+                "id": item.case_number,
+                "result": item.result,
+                "time": item.time,
+                "memory": item.memory,
+            }
+            for item in results
+        ]
     return envelope({"details": details, "score": submission.score, "counts": submission.counts})
 
 

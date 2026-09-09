@@ -30,9 +30,7 @@ _TEST_STRATEGIES = {
 
 
 class AIProviderError(RuntimeError):
-    def __init__(
-        self, message: str, *, input_tokens: int = 0, output_tokens: int = 0
-    ) -> None:
+    def __init__(self, message: str, *, input_tokens: int = 0, output_tokens: int = 0) -> None:
         super().__init__(message)
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
@@ -114,9 +112,7 @@ async def _chat(
         try:
             # httpx read timeouts are idle timeouts and can be extended indefinitely by
             # periodic response bytes. wait_for enforces the advertised wall-clock limit.
-            return await asyncio.wait_for(
-                request(request_payload), timeout=timeout_seconds
-            )
+            return await asyncio.wait_for(request(request_payload), timeout=timeout_seconds)
         except (TimeoutError, httpx.TimeoutException) as exc:
             raise AIProviderError(
                 f"模型服务在 {timeout_seconds:g} 秒内未返回结果。"
@@ -177,9 +173,7 @@ async def _chat(
                 ]
                 continue
             detail = (
-                "输出达到长度上限，JSON 被截断"
-                if finish_reason == "length"
-                else "响应内容无法解析"
+                "输出达到长度上限，JSON 被截断" if finish_reason == "length" else "响应内容无法解析"
             )
             raise AIProviderError(
                 f"模型服务连续两次返回无效题目 JSON：{detail}"
@@ -364,9 +358,7 @@ async def run_ai_task(task_id: str) -> None:
             output_tokens=out_tokens,
             cost=_cost(config, in_tokens, out_tokens),
         )
-        validated_draft = ProblemBody.model_validate(
-            _normalize_problem_units(draft.get("problem"))
-        )
+        validated_draft = ProblemBody.model_validate(_normalize_problem_units(draft.get("problem")))
         await _update(task_id, progress="正在检查题意一致性、边界覆盖与测试点区分度")
         critique_prompt = (
             "复核并改进以下题目。确保满足原始需求、字段完整、样例正确，测试点覆盖零值、"
@@ -403,15 +395,12 @@ async def run_ai_task(task_id: str) -> None:
         out_tokens += second_out
         await _update(task_id, progress="正在校验题目结构与导入兼容性")
         try:
-            validated = ProblemBody.model_validate(
-                _normalize_problem_units(final.get("problem"))
-            )
+            validated = ProblemBody.model_validate(_normalize_problem_units(final.get("problem")))
         except (ValidationError, TypeError) as exc:
             final = draft
             validated = validated_draft
             review_warning = (
-                "批判性复核返回的题目结构不兼容，已保留通过结构校验的草稿："
-                f"{type(exc).__name__}"
+                f"批判性复核返回的题目结构不兼容，已保留通过结构校验的草稿：{type(exc).__name__}"
             )
         notes = str(final.get("notes") or "")
         if review_warning:

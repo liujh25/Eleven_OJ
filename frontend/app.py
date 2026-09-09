@@ -538,7 +538,19 @@ def render_problem_statement(problem: dict) -> None:
 
 
 def render_submission_result(submission_id: str, auto_refresh: bool = False) -> None:
-    result = client().get(f"/api/submissions/{submission_id}")
+    try:
+        result = client().get(f"/api/submissions/{submission_id}")
+    except APIError as exc:
+        if exc.status != 403:
+            raise
+        public_log = client().get(f"/api/submissions/{submission_id}/log")
+        st.status("该提交的公开测试日志", state="complete")
+        st.info("你只能查看公开的测试点日志；用户代码、编译信息和运行摘要仍不可见。")
+        score_column, total_column = st.columns(2)
+        score_column.metric("得分", public_log.get("score", 0))
+        total_column.metric("总分", public_log.get("counts", 0))
+        st.dataframe(public_log["details"], width="stretch", hide_index=True)
+        return
     state = {"pending": "running", "success": "complete", "error": "error"}.get(
         result["status"], "complete"
     )
@@ -557,16 +569,19 @@ def render_submission_result(submission_id: str, auto_refresh: bool = False) -> 
         st.error(result["error_info"])
     try:
         log = client().get(f"/api/submissions/{submission_id}/log")
-        st.dataframe(log["details"], width="stretch", hide_index=True)
+        if log["details"]:
+            st.dataframe(log["details"], width="stretch", hide_index=True)
+        else:
+            st.info("该题尚未公开测试点明细；你可以查看总得分，但暂时看不到逐点状态。")
     except APIError as exc:
         st.info(f"测试点日志不可见：{exc}")
 
 
-def problem_management(items: list[dict]) -> None:
+def problem_management(items: list[dict], *, can_delete: bool) -> None:
     staged_problem = st.session_state.get("ai_problem")
-    create_first = bool(staged_problem) or st.session_state.get(
-        "problem_management_mode"
-    ) == "create"
+    create_first = (
+        bool(staged_problem) or st.session_state.get("problem_management_mode") == "create"
+    )
     labels = (
         ["新增题目", "题库概览", "编辑题目"]
         if create_first
@@ -612,10 +627,13 @@ def problem_management(items: list[dict]) -> None:
                 client().put(f"/api/problems/{selected}", json=payload)
                 st.success("题目已更新")
                 st.rerun()
-            if st.button("删除题目", key=f"delete-{selected}", type="secondary"):
-                client().delete(f"/api/problems/{selected}")
-                st.success("题目已删除")
-                st.rerun()
+            if can_delete:
+                if st.button("删除题目", key=f"delete-{selected}", type="secondary"):
+                    client().delete(f"/api/problems/{selected}")
+                    st.success("题目已删除")
+                    st.rerun()
+            else:
+                st.caption("普通用户可以编辑题目；删除题目仅限管理员。")
         except Exception as exc:
             show_error(exc)
 
@@ -643,25 +661,25 @@ def problem_library_page(all_problems: list[dict]) -> None:
         unsafe_allow_html=True,
     )
     user = st.session_state.get("user") or {}
-    if user.get("role") == "admin":
-        st.markdown("#### 管理员题库控制台")
-        create_column, manage_column, status_column = st.columns([1.2, 1.2, 3])
-        create_column.button(
-            "＋ 新增题目",
-            key="library-create-problem",
-            type="primary",
-            width="stretch",
-            on_click=show_problem_management,
-            args=("create",),
-        )
-        manage_column.button(
-            "⚙ 管理题库",
-            key="library-manage-problems",
-            width="stretch",
-            on_click=show_problem_management,
-            args=("overview",),
-        )
-        status_column.info(f"当前题库共 {len(all_problems)} 道题，可在此新增、编辑或删除。")
+    st.markdown("#### 题库管理入口")
+    create_column, manage_column, status_column = st.columns([1.2, 1.2, 3])
+    create_column.button(
+        "＋ 新增题目",
+        key="library-create-problem",
+        type="primary",
+        width="stretch",
+        on_click=show_problem_management,
+        args=("create",),
+    )
+    manage_column.button(
+        "⚙ 管理题库",
+        key="library-manage-problems",
+        width="stretch",
+        on_click=show_problem_management,
+        args=("overview",),
+    )
+    permission_text = "新增、编辑和删除" if user.get("role") == "admin" else "新增和编辑"
+    status_column.info(f"当前题库共 {len(all_problems)} 道题，你可以{permission_text}题目。")
     all_tags = sorted({tag for item in all_problems for tag in item.get("tags", [])})
     search_column, tag_column, action_column = st.columns([3, 1.4, 1.1])
     keyword = search_column.text_input(
@@ -746,26 +764,20 @@ def workspace_page() -> None:
             key="back-library-from-management",
             on_click=show_problem_library,
         )
-        if user["role"] != "admin":
-            st.warning("只有管理员可以新增、编辑或删除题目。")
-            return
         st.markdown("### 题目管理")
-        st.caption("新增题目保存后会立即进入题库，并自动打开题目与评测页面。")
-        problem_management(all_problems)
+        st.caption("所有登录用户均可新增、编辑题目；删除题目仅限管理员。")
+        problem_management(all_problems, can_delete=user["role"] == "admin")
         return
 
     nav_left, nav_right = st.columns([4, 1])
-    nav_left.button(
-        "← 返回题目列表", key="back-problem-library", on_click=show_problem_library
+    nav_left.button("← 返回题目列表", key="back-problem-library", on_click=show_problem_library)
+    nav_right.button(
+        "⚙ 题目管理",
+        key="judge-problem-management",
+        width="stretch",
+        on_click=show_problem_management,
+        args=("overview",),
     )
-    if user["role"] == "admin":
-        nav_right.button(
-            "⚙ 题目管理",
-            key="judge-problem-management",
-            width="stretch",
-            on_click=show_problem_management,
-            args=("overview",),
-        )
     if notice := st.session_state.pop("problem_notice", None):
         st.success(notice)
     try:
@@ -911,6 +923,8 @@ def workspace_page() -> None:
                     show_error(exc)
         st.markdown("#### 当前可用语言")
         st.write("、".join(languages))
+
+
 AI_TEST_STRATEGIES = {
     "basic": ("简单测试点", "样例附近的小规模输入，用于发现基础实现错误"),
     "normal": ("普通测试点", "约束中段的典型数据，用于检验完整算法逻辑"),
@@ -1041,11 +1055,6 @@ def render_ai_problem_result(task_id: str, result: dict) -> None:
     with raw_tab:
         st.json(result)
 
-    user = st.session_state.get("user") or {}
-    if user.get("role") != "admin":
-        st.info("题目预览已生成。只有管理员可以将 AI 题目写入正式题库。")
-        return
-
     review = result.get("review") or {}
     requires_manual_review = review.get("status") == "fallback" or (
         "已保留通过结构校验的草稿" in str(result.get("notes") or "")
@@ -1077,9 +1086,7 @@ def render_ai_problem_result(task_id: str, result: dict) -> None:
     ):
         stage_ai_problem(problem)
         st.rerun()
-    st.caption(
-        "复核通过的结果可直接导入；载入表单可在保存前继续修改题面和测试点。"
-    )
+    st.caption("复核通过的结果可直接导入；载入表单可在保存前继续修改题面和测试点。")
 
 
 def ai_task_live_panel(task_id: str, refresh_seconds: float, auto_refresh: bool) -> None:

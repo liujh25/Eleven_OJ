@@ -33,9 +33,10 @@ def test_ai_problem_limit_units_are_normalized():
         "time_limit": 1.0,
         "memory_limit": 128,
     }
-    assert _normalize_problem_units(
-        {"time_limit": 3000, "memory_limit": 128 * 1024 * 1024}
-    ) == {"time_limit": 3.0, "memory_limit": 128}
+    assert _normalize_problem_units({"time_limit": 3000, "memory_limit": 128 * 1024 * 1024}) == {
+        "time_limit": 3.0,
+        "memory_limit": 128,
+    }
 
 
 async def test_model_timeout_records_actionable_error():
@@ -484,9 +485,7 @@ def test_ai_console_previews_and_directly_imports_problem():
         raise AssertionError(f"unexpected request: {request.method} {path}")
 
     oj_client = OJClient("http://test")
-    oj_client.client = httpx.Client(
-        transport=httpx.MockTransport(handler), base_url="http://test"
-    )
+    oj_client.client = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://test")
     app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
     app.session_state["user"] = {"username": "admin", "user_id": "admin", "role": "admin"}
     app.session_state["nav_page"] = "AI 智能命题"
@@ -517,9 +516,7 @@ def test_ai_console_previews_and_directly_imports_problem():
     review_app.session_state["ai_task_id"] = "task-preview"
     review_app.session_state["api"] = oj_client
     review_app.run(timeout=20)
-    next(
-        button for button in review_app.button if button.label == "载入题目管理表单"
-    ).click().run()
+    next(button for button in review_app.button if button.label == "载入题目管理表单").click().run()
     assert not review_app.exception
     assert review_app.session_state["nav_page"] == "题目与评测"
     assert review_app.session_state["workspace_view"] == "manage"
@@ -539,9 +536,7 @@ def test_problem_library_exposes_admin_management_actions():
         raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
 
     oj_client = OJClient("http://test")
-    oj_client.client = httpx.Client(
-        transport=httpx.MockTransport(handler), base_url="http://test"
-    )
+    oj_client.client = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://test")
     app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
     app.session_state["user"] = {"username": "admin", "user_id": "admin", "role": "admin"}
     app.session_state["nav_page"] = "题目与评测"
@@ -552,3 +547,33 @@ def test_problem_library_exposes_admin_management_actions():
     labels = {button.label for button in app.button}
     assert "＋ 新增题目" in labels
     assert "⚙ 管理题库" in labels
+
+
+def test_problem_library_exposes_authoring_but_not_delete_to_normal_user():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/problems/":
+            return httpx.Response(
+                200, json={"code": 200, "msg": "ok", "data": [PROBLEM["problem"]]}
+            )
+        if request.url.path == "/api/problems/ai_sum":
+            return httpx.Response(200, json={"code": 200, "msg": "ok", "data": PROBLEM["problem"]})
+        raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
+
+    oj_client = OJClient("http://test")
+    oj_client.client = httpx.Client(transport=httpx.MockTransport(handler), base_url="http://test")
+    app = AppTest.from_file(Path(__file__).parents[1] / "frontend" / "app.py")
+    app.session_state["user"] = {"username": "alice", "user_id": "alice", "role": "user"}
+    app.session_state["nav_page"] = "题目与评测"
+    app.session_state["workspace_view"] = "library"
+    app.session_state["api"] = oj_client
+    app.run(timeout=20)
+    assert not app.exception
+    labels = {button.label for button in app.button}
+    assert "＋ 新增题目" in labels
+    assert "⚙ 管理题库" in labels
+
+    next(button for button in app.button if button.label == "⚙ 管理题库").click().run()
+    assert not app.exception
+    labels = [button.label for button in app.button]
+    assert labels.count("保存题目") == 2
+    assert "删除题目" not in labels
