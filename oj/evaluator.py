@@ -25,10 +25,11 @@ if os.name == "posix":
     import resource
 
     resource_members = vars(resource)
-    _POSIX_RESOURCE_API = {
-        name: resource_members[name]
-        for name in ("setrlimit", "RLIMIT_AS", "RLIMIT_CPU", "RLIMIT_FSIZE", "RLIMIT_NPROC")
-    }
+    if "prlimit" in resource_members:
+        _POSIX_RESOURCE_API = {
+            name: resource_members[name]
+            for name in ("prlimit", "RLIMIT_AS", "RLIMIT_CPU", "RLIMIT_FSIZE")
+        }
     _POSIX_KILLPG = vars(os)["killpg"]
     _POSIX_SIGKILL = vars(signal)["SIGKILL"]
 
@@ -77,20 +78,27 @@ def effective_limits(problem: Problem, language: Language) -> tuple[float, int]:
     )
 
 
-def _resource_limiter(memory_mb: int, cpu_seconds: int):
-    def limit() -> None:
-        if _POSIX_RESOURCE_API is not None:
-            memory_bytes = memory_mb * 1024 * 1024
-            set_limit = _POSIX_RESOURCE_API["setrlimit"]
-            set_limit(_POSIX_RESOURCE_API["RLIMIT_AS"], (memory_bytes, memory_bytes))
-            set_limit(_POSIX_RESOURCE_API["RLIMIT_CPU"], (cpu_seconds, cpu_seconds + 1))
-            set_limit(
-                _POSIX_RESOURCE_API["RLIMIT_FSIZE"],
-                (16 * 1024 * 1024, 16 * 1024 * 1024),
-            )
-            set_limit(_POSIX_RESOURCE_API["RLIMIT_NPROC"], (32, 32))
-
-    return limit
+def _apply_posix_limits(pid: int, memory_mb: int, cpu_seconds: int) -> None:
+    """Apply Linux limits from the parent without unsafe pre-exec Python code."""
+    if _POSIX_RESOURCE_API is None:
+        return
+    memory_bytes = memory_mb * 1024 * 1024
+    process_limit = _POSIX_RESOURCE_API["prlimit"]
+    try:
+        process_limit(pid, _POSIX_RESOURCE_API["RLIMIT_AS"], (memory_bytes, memory_bytes))
+        process_limit(
+            pid,
+            _POSIX_RESOURCE_API["RLIMIT_CPU"],
+            (cpu_seconds, cpu_seconds + 1),
+        )
+        process_limit(
+            pid,
+            _POSIX_RESOURCE_API["RLIMIT_FSIZE"],
+            (16 * 1024 * 1024, 16 * 1024 * 1024),
+        )
+    except ProcessLookupError:
+        # Very short-lived programs may finish between spawn and prlimit.
+        pass
 
 
 def _kill_tree(pid: int) -> None:
@@ -136,7 +144,6 @@ async def run_process(
 ) -> ProcessResult:
     kwargs: dict[str, Any] = {}
     if os.name == "posix":
-        kwargs["preexec_fn"] = _resource_limiter(memory_mb, max(1, int(timeout) + 1))
         kwargs["start_new_session"] = True
     elif os.name == "nt":
         kwargs["creationflags"] = 0x00000200
@@ -159,6 +166,8 @@ async def run_process(
         },
         **kwargs,
     )
+    if os.name == "posix":
+        _apply_posix_limits(proc.pid, memory_mb, max(1, int(timeout) + 1))
     state: dict[str, Any] = {"peak": 0.0, "mle": False}
     watcher = asyncio.create_task(_watch_memory(proc.pid, memory_mb, state))
     communication = asyncio.create_task(proc.communicate(stdin.encode()))
