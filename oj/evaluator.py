@@ -18,6 +18,20 @@ from oj.models import Language, Problem
 
 FORBIDDEN_COMMAND_CHARS = set(";&|><`\n\r")
 
+_POSIX_RESOURCE_API: dict[str, Any] | None = None
+_POSIX_KILLPG = None
+_POSIX_SIGKILL = None
+if os.name == "posix":
+    import resource
+
+    resource_members = vars(resource)
+    _POSIX_RESOURCE_API = {
+        name: resource_members[name]
+        for name in ("setrlimit", "RLIMIT_AS", "RLIMIT_CPU", "RLIMIT_FSIZE", "RLIMIT_NPROC")
+    }
+    _POSIX_KILLPG = vars(os)["killpg"]
+    _POSIX_SIGKILL = vars(signal)["SIGKILL"]
+
 
 def parse_command(template: str, src: Path, exe: Path) -> list[str]:
     if not template or any(char in template for char in FORBIDDEN_COMMAND_CHARS):
@@ -65,20 +79,16 @@ def effective_limits(problem: Problem, language: Language) -> tuple[float, int]:
 
 def _resource_limiter(memory_mb: int, cpu_seconds: int):
     def limit() -> None:
-        if os.name == "posix":
-            import resource
-
+        if _POSIX_RESOURCE_API is not None:
             memory_bytes = memory_mb * 1024 * 1024
-            resource_api = vars(resource)
-            set_limit = resource_api["setrlimit"]
-            set_limit(resource_api["RLIMIT_AS"], (memory_bytes, memory_bytes))
-            set_limit(resource_api["RLIMIT_CPU"], (cpu_seconds, cpu_seconds + 1))
+            set_limit = _POSIX_RESOURCE_API["setrlimit"]
+            set_limit(_POSIX_RESOURCE_API["RLIMIT_AS"], (memory_bytes, memory_bytes))
+            set_limit(_POSIX_RESOURCE_API["RLIMIT_CPU"], (cpu_seconds, cpu_seconds + 1))
             set_limit(
-                resource_api["RLIMIT_FSIZE"],
+                _POSIX_RESOURCE_API["RLIMIT_FSIZE"],
                 (16 * 1024 * 1024, 16 * 1024 * 1024),
             )
-            set_limit(resource_api["RLIMIT_NPROC"], (32, 32))
-            vars(os)["setsid"]()
+            set_limit(_POSIX_RESOURCE_API["RLIMIT_NPROC"], (32, 32))
 
     return limit
 
@@ -127,6 +137,7 @@ async def run_process(
     kwargs: dict[str, Any] = {}
     if os.name == "posix":
         kwargs["preexec_fn"] = _resource_limiter(memory_mb, max(1, int(timeout) + 1))
+        kwargs["start_new_session"] = True
     elif os.name == "nt":
         kwargs["creationflags"] = 0x00000200
     started = time.perf_counter()
@@ -150,20 +161,21 @@ async def run_process(
     )
     state: dict[str, Any] = {"peak": 0.0, "mle": False}
     watcher = asyncio.create_task(_watch_memory(proc.pid, memory_mb, state))
+    communication = asyncio.create_task(proc.communicate(stdin.encode()))
     timed_out = False
     try:
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(stdin.encode()), timeout=max(timeout, 0.05)
+            asyncio.shield(communication), timeout=max(timeout, 0.05)
         )
     except TimeoutError:
         timed_out = True
-        if os.name == "posix":
+        if _POSIX_KILLPG is not None and _POSIX_SIGKILL is not None:
             try:
-                vars(os)["killpg"](proc.pid, vars(signal)["SIGKILL"])
+                _POSIX_KILLPG(proc.pid, _POSIX_SIGKILL)
             except ProcessLookupError:
                 pass
         _kill_tree(proc.pid)
-        stdout, stderr = await proc.communicate()
+        stdout, stderr = await communication
     finally:
         watcher.cancel()
         await asyncio.gather(watcher, return_exceptions=True)
