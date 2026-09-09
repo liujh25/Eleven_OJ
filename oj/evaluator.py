@@ -176,7 +176,7 @@ async def run_process(
         stdout, stderr = await asyncio.wait_for(
             asyncio.shield(communication), timeout=max(timeout, 0.05)
         )
-    except TimeoutError:
+    except (TimeoutError, asyncio.TimeoutError):
         timed_out = True
         if _POSIX_KILLPG is not None and _POSIX_SIGKILL is not None:
             try:
